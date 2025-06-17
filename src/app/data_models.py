@@ -56,6 +56,24 @@ class MedicalRecord(DatabaseRecord):
     payment: Payment = Field(description="Payment made for the medical test")
     comments : str = Field(description="Comments on the medical entry", default=None)
     
+    def __str__(self) -> str:
+        lines = [
+            "Form submitted",
+            f"Patient Name: {self.patient.name}"
+        ]
+        
+        if self.patient.phone:
+            lines.append(f"Patient Phone: {self.patient.phone}")
+        if self.patient.address:
+            lines.append(f"Patient Address: {self.patient.address}")
+        if self.doctor:
+            lines.append(f"Referred by Dr. {self.doctor.name} from {self.doctor.location}")
+        lines.append(f"Paid {self.payment.amount} Rupees for {self.medical_test.name}")
+        if self.comments:
+            lines.append(f"Comments: {self.comments}")
+            
+        return "<br>".join(lines)
+
 
 class ExpenseType(StrEnum):
     DOCTOR_FEES = "Doctor Fees"
