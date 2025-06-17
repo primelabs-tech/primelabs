@@ -122,7 +122,7 @@ class Form:
                     comments=comments,
                     updated_by=CURRENT_USER
                 )
-                print (medical_entry)
+                st.write(medical_entry)
 
             except Exception as e:
                 st.write(e)
