@@ -1,4 +1,5 @@
 import time
+import logging
 from datetime import datetime
 
 import streamlit as st
@@ -9,10 +10,26 @@ from data_models import (
     Doctor, 
     MedicalTest,  
     Payment, 
-    User
+    User,
+    DBCollectionNames,
 )
+from firestore_crud import FirestoreCRUD
+
 
 CURRENT_USER = User.SUPERVISOR.value
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+
+
+@st.cache_resource
+def get_firestore():
+    return FirestoreCRUD(use_admin_sdk=True)
+
+
+db = get_firestore()
+
 
 class Form:
     def __init__(self):
@@ -120,8 +137,10 @@ class Form:
                     comments=comments,
                     updated_by=CURRENT_USER
                 )
-                
-                # Show temporary messages only after successful record creation
+                db.create_doc(
+                    DBCollectionNames.MEDICAL_RECORDS, 
+                    medical_entry.model_dump(mode="json")
+                )
                 self.show_temporary_messages(medical_entry)
 
             except Exception as e:

@@ -16,7 +16,7 @@ class DatabaseRecord(BaseModel):
     """
     Base class for all database records
     """
-    date: datetime = Field(description="Date time of the record")
+    date: datetime = Field(description="Date time of the record", default=datetime.now())
     updated_by: User = Field(description="Last updated by")
 
 
@@ -107,6 +107,12 @@ class ReferralRecord(DatabaseRecord):
     comments: str = Field(description="Comments on the referral", default=None)
 
 
+class DBCollectionNames(StrEnum):
+    MEDICAL_RECORDS = "medical_records"
+    EXPENSES = "expenses"
+    LEDGER = "ledger"
+
+
 if __name__=="__main__":
 
     CURRENT_USER = User.SUPERVISOR.value
@@ -116,8 +122,7 @@ if __name__=="__main__":
         doctor=Doctor(name="Dr. Smith", location="Bangalore"),
         medical_test=MedicalTest(name="Blood Test", price=200),
         payment=Payment(amount=200),
-        date="2021-01-01",
         comments="Test comments",
         updated_by=CURRENT_USER
     )
-    print (medical_entry.json())
+    print (medical_entry.model_dump(mode="json"))
