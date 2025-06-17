@@ -108,9 +108,12 @@ class ReferralRecord(DatabaseRecord):
 
 
 class DBCollectionNames(StrEnum):
-    MEDICAL_RECORDS = "medical_records"
-    EXPENSES = "expenses"
-    LEDGER = "ledger"
+    MEDICAL_RECORDS_PROD = "medical_records"
+    MEDICAL_RECORDS_DEV = "medical_records_dev"
+    EXPENSES_PROD = "expenses"
+    EXPENSES_DEV = "expenses_dev"
+    LEDGER_PROD = "ledger"
+    LEDGER_DEV = "ledger_dev"
 
 
 if __name__=="__main__":

@@ -33,7 +33,7 @@ db = get_firestore()
 
 class Form:
     def __init__(self):
-        pass
+        self.database_collection = DBCollectionNames(st.secrets["database_collection"]).value
     
     def show_temporary_messages(self, medical_record):
         # Create a placeholder for temporary messages
@@ -138,7 +138,7 @@ class Form:
                     updated_by=CURRENT_USER
                 )
                 db.create_doc(
-                    DBCollectionNames.MEDICAL_RECORDS, 
+                    self.database_collection, 
                     medical_entry.model_dump(mode="json")
                 )
                 self.show_temporary_messages(medical_entry)
