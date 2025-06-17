@@ -16,7 +16,7 @@ class DatabaseRecord(BaseModel):
     """
     Base class for all database records
     """
-    date: datetime = Field(description="Date time of the record")
+    date: datetime = Field(description="Date time of the record", default=datetime.now())
     updated_by: User = Field(description="Last updated by")
 
 
@@ -56,6 +56,24 @@ class MedicalRecord(DatabaseRecord):
     payment: Payment = Field(description="Payment made for the medical test")
     comments : str = Field(description="Comments on the medical entry", default=None)
     
+    def __str__(self) -> str:
+        lines = [
+            "Form submitted",
+            f"Patient Name: {self.patient.name}"
+        ]
+        
+        if self.patient.phone:
+            lines.append(f"Patient Phone: {self.patient.phone}")
+        if self.patient.address:
+            lines.append(f"Patient Address: {self.patient.address}")
+        if self.doctor:
+            lines.append(f"Referred by Dr. {self.doctor.name} from {self.doctor.location}")
+        lines.append(f"Paid {self.payment.amount} Rupees for {self.medical_test.name}")
+        if self.comments:
+            lines.append(f"Comments: {self.comments}")
+            
+        return "<br>".join(lines)
+
 
 class ExpenseType(StrEnum):
     DOCTOR_FEES = "Doctor Fees"
@@ -89,6 +107,15 @@ class ReferralRecord(DatabaseRecord):
     comments: str = Field(description="Comments on the referral", default=None)
 
 
+class DBCollectionNames(StrEnum):
+    MEDICAL_RECORDS_PROD = "medical_records"
+    MEDICAL_RECORDS_DEV = "medical_records_dev"
+    EXPENSES_PROD = "expenses"
+    EXPENSES_DEV = "expenses_dev"
+    LEDGER_PROD = "ledger"
+    LEDGER_DEV = "ledger_dev"
+
+
 if __name__=="__main__":
 
     CURRENT_USER = User.SUPERVISOR.value
@@ -98,8 +125,7 @@ if __name__=="__main__":
         doctor=Doctor(name="Dr. Smith", location="Bangalore"),
         medical_test=MedicalTest(name="Blood Test", price=200),
         payment=Payment(amount=200),
-        date="2021-01-01",
         comments="Test comments",
         updated_by=CURRENT_USER
     )
-    print (medical_entry.json())
+    print (medical_entry.model_dump(mode="json"))

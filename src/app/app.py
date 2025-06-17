@@ -1,3 +1,5 @@
+import time
+import logging
 from datetime import datetime
 
 import streamlit as st
@@ -8,14 +10,37 @@ from data_models import (
     Doctor, 
     MedicalTest,  
     Payment, 
-    User
+    User,
+    DBCollectionNames,
 )
+from firestore_crud import FirestoreCRUD
+
 
 CURRENT_USER = User.SUPERVISOR.value
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+
+
+@st.cache_resource
+def get_firestore():
+    return FirestoreCRUD(use_admin_sdk=True)
+
+
+db = get_firestore()
+
 
 class Form:
     def __init__(self):
-        pass
+        self.database_collection = DBCollectionNames(st.secrets["database_collection"]).value
+    
+    def show_temporary_messages(self, medical_record):
+        # Create a placeholder for temporary messages
+        message_placeholder = st.empty()
+        message_placeholder.markdown(str(medical_record), unsafe_allow_html=True)
+        time.sleep(3)
+        message_placeholder.empty()
     
     def render(self):
         st.header('Medical Test Entry')
@@ -102,16 +127,6 @@ class Form:
         submitted = st.button(label='Submit')
         
         if submitted:
-            # st.write('Form submitted')
-            # st.write(f'Patient Name: {patient_name}')
-            # if phone_available:
-            #     st.write(f'Patient Phone: {patient_phone}')
-            # if address_available:
-            #     st.write(f'Patient Address: {patient_address}')
-            # if through_referral:
-            #     st.write(f'Referred by Dr. {doctor_name} from {doctor_location}')
-            # st.write(f'Paid {payment} Rupees for {test_name}')
-            # st.write(f'Comments: {comments}')
             try:
                 medical_entry = MedicalRecord(
                     patient=patient,
@@ -122,7 +137,11 @@ class Form:
                     comments=comments,
                     updated_by=CURRENT_USER
                 )
-                st.write(medical_entry)
+                db.create_doc(
+                    self.database_collection, 
+                    medical_entry.model_dump(mode="json")
+                )
+                self.show_temporary_messages(medical_entry)
 
             except Exception as e:
                 st.write(e)
