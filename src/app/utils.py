@@ -28,6 +28,14 @@ def get_firebase_auth_config():
     "appId": st.secrets.get("app_id", "")
 }
 
+
+def is_project_owner(email):
+    """Check if the user is the project owner"""
+    # Define project owner email - this should be configured in secrets
+    owner_email = st.secrets.get("project_owner_email", "owner@primelabs.com")
+    return email == owner_email
+
+
 @st.cache_resource
 def get_firestore():
     return FirestoreCRUD()

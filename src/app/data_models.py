@@ -6,10 +6,12 @@ from pydantic import BaseModel, Field
 
 
 class User(StrEnum):
-    MANAGER = "Person 1"
-    SUPERVISOR = "Person 2"
-    DOCTOR = "Person 3"
-    OTHER = "Other"
+    """User roles"""
+    ADMIN = "Admin"
+    MANAGER = "Manager"
+    SUPERVISOR = "Supervisor"
+    DOCTOR = "Doctor"
+    EMPLOYEE = "Employee"
 
 
 class DatabaseRecord(BaseModel):
