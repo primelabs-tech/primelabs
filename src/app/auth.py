@@ -1,9 +1,38 @@
 import streamlit as st
 import pyrebase
-from firebase_admin import auth
+import firebase_admin
+from firebase_admin import auth, credentials
+from google.oauth2 import service_account
 
 from data_models import User
 
+
+# Initialize Firebase Admin SDK
+def initialize_firebase_admin():
+    """Initialize Firebase Admin SDK if not already initialized"""
+    if not firebase_admin._apps:
+        try:
+            # Create credentials from Streamlit secrets
+            credentials_dict = {
+                "type": st.secrets["type"],
+                "project_id": st.secrets["project_id"],
+                "private_key_id": st.secrets["private_key_id"],
+                "private_key": st.secrets["private_key"].replace('\\n', '\n'),
+                "client_email": st.secrets["client_email"],
+                "client_id": st.secrets["client_id"],
+                "auth_uri": st.secrets["auth_uri"],
+                "token_uri": st.secrets["token_uri"],
+                "auth_provider_x509_cert_url": st.secrets["auth_provider_x509_cert_url"],
+                "client_x509_cert_url": st.secrets["client_x509_cert_url"]
+            }
+            
+            cred = credentials.Certificate(credentials_dict)
+            firebase_admin.initialize_app(cred)
+        except Exception as e:
+            st.error(f"Failed to initialize Firebase Admin SDK: {str(e)}")
+
+# Initialize Firebase Admin SDK
+initialize_firebase_admin()
 
 firebase_config = {
     "apiKey": st.secrets["web_api_key"],
@@ -52,9 +81,62 @@ def check_authentication():
     return st.session_state.authenticated
 
 
+def test_firebase_config():
+    """Test Firebase configuration and connectivity"""
+    try:
+        # Test Firebase Admin SDK connection
+        from firebase_admin import auth as admin_auth
+        
+        # Test pyrebase connection
+        test_config = {
+            "apiKey": st.secrets["web_api_key"],
+            "authDomain": f"{st.secrets['project_id']}.firebaseapp.com",
+            "databaseURL": f"https://{st.secrets['project_id']}-default-rtdb.firebaseio.com/",
+            "projectId": st.secrets["project_id"],
+            "storageBucket": f"{st.secrets['project_id']}.firebasestorage.app",
+            "messagingSenderId": st.secrets.get("messagingSenderId", ""),
+            "appId": st.secrets.get("appId", "")
+        }
+        
+        test_firebase = pyrebase.initialize_app(test_config)
+        test_auth = test_firebase.auth()
+        
+        st.success("✅ Firebase configuration appears to be correct")
+        st.info(f"Project ID: {st.secrets['project_id']}")
+        st.info(f"Auth Domain: {st.secrets['project_id']}.firebaseapp.com")
+        
+        return True
+    except Exception as e:
+        st.error(f"❌ Firebase configuration error: {str(e)}")
+        return False
+
+
+def show_firebase_debug_info():
+    """Show Firebase debug information for troubleshooting"""
+    st.subheader("Firebase Debug Information")
+    
+    # Test configuration
+    if st.button("Test Firebase Configuration"):
+        test_firebase_config()
+    
+    # Show current configuration (without sensitive data)
+    st.write("**Current Configuration:**")
+    st.write(f"- Project ID: {st.secrets.get('project_id', 'Not set')}")
+    st.write(f"- Web API Key: {'*' * 20 + st.secrets.get('web_api_key', '')[-8:] if st.secrets.get('web_api_key') else 'Not set'}")
+    st.write(f"- Database Collection: {st.secrets.get('database_collection', 'Not set')}")
+    
+    # Add test account creation
+    st.markdown("---")
+    create_test_account()
+
+
 def login_form():
     """Display login form and handle authentication"""
     st.title("Login")
+    
+    # Add Firebase debug toggle
+    with st.expander("🔧 Debug Information", expanded=False):
+        show_firebase_debug_info()
     
     # Add registration option
     auth_mode = st.radio("Choose an option:", ["Login", "Register", "Reset Password"], horizontal=True)
@@ -102,16 +184,34 @@ def login_form():
                     st.rerun()
                     
                 except Exception as e:
-                    if "INVALID_EMAIL" in str(e):
+                    error_message = str(e)
+                    st.error(f"Full error details: {error_message}")
+                    
+                    # Log the error for debugging
+                    import logging
+                    logging.error(f"Authentication error: {error_message}")
+                    
+                    if "INVALID_EMAIL" in error_message:
                         st.error("Invalid email format")
-                    elif "EMAIL_NOT_FOUND" in str(e):
+                    elif "EMAIL_NOT_FOUND" in error_message:
                         st.error("No account found with this email")
-                    elif "INVALID_PASSWORD" in str(e):
-                        st.error("Incorrect password")
-                    elif "TOO_MANY_ATTEMPTS_TRY_LATER" in str(e):
+                    elif "INVALID_PASSWORD" in error_message or "INVALID_LOGIN_CREDENTIALS" in error_message:
+                        st.error("Incorrect password or invalid login credentials")
+                    elif "TOO_MANY_ATTEMPTS_TRY_LATER" in error_message:
                         st.error("Too many failed attempts. Please try again later")
+                    elif "USER_DISABLED" in error_message:
+                        st.error("This user account has been disabled")
+                    elif "WEAK_PASSWORD" in error_message:
+                        st.error("Password is too weak. Please choose a stronger password")
                     else:
-                        st.error(f"Authentication failed: {str(e)}")
+                        st.error(f"Authentication failed: {error_message}")
+                        
+                    # Additional debugging information
+                    st.info("Debugging tips:")
+                    st.info("1. Make sure you're using the correct email and password")
+                    st.info("2. Try registering a new account if you haven't already")
+                    st.info("3. Check if your email requires verification")
+                    st.info("4. Ensure you have a stable internet connection")
             else:
                 st.error("Please enter both email and password")
     
@@ -478,3 +578,45 @@ def show_admin_menu():
         
         if st.sidebar.button("Hide Admin Panel"):
             st.session_state.show_admin = False
+
+
+def create_test_account():
+    """Create a test account for debugging purposes"""
+    st.subheader("Create Test Account")
+    
+    test_email = st.text_input("Test Email", value="test@primelabs.com", key="test_email")
+    test_password = st.text_input("Test Password", value="test123456", type="password", key="test_password")
+    
+    if st.button("Create Test Account", key="create_test"):
+        if test_email and test_password:
+            try:
+                # Create user with Firebase
+                user = firebase_auth.create_user_with_email_and_password(test_email, test_password)
+                
+                st.success(f"✅ Test account created successfully!")
+                st.info(f"User ID: {user['localId']}")
+                st.info(f"Email: {test_email}")
+                st.info("You can now try logging in with these credentials")
+                
+                # Store user with default role
+                from firestore_crud import FirestoreCRUD
+                db = FirestoreCRUD(use_admin_sdk=True)
+                
+                user_data = {
+                    "email": test_email,
+                    "role": User.DOCTOR,  # Default role
+                    "created_at": "test_account",
+                    "status": "approved"  # Auto-approve test account
+                }
+                
+                db.create_doc("users", user_data, doc_id=user['localId'])
+                st.success("✅ Test user data stored in Firestore")
+                
+            except Exception as e:
+                error_msg = str(e)
+                if "EMAIL_EXISTS" in error_msg:
+                    st.warning("Test account already exists. Try logging in with the credentials.")
+                else:
+                    st.error(f"❌ Failed to create test account: {error_msg}")
+        else:
+            st.error("Please provide both email and password")
