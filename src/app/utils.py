@@ -17,8 +17,9 @@ def get_firebase_auth_config():
 def is_project_owner(email):
     """Check if the user is the project owner"""
     # Define project owner email - this should be configured in secrets
-    owner_email = st.secrets.get("project_owner_email", "owner@primelabs.com")
-    return email == owner_email
+    owner_email1 = st.secrets.get("project_owner_email", None)
+    owner_email2 = st.secrets.get("project_owner_email_2", None)
+    return email in [owner_email1, owner_email2]
 
 
 @st.cache_resource
