@@ -13,7 +13,7 @@ from utils import (
     get_firestore,
     is_project_owner,
 )
-from data_models import User
+from data_models import User, AuthorizationStatus
 
 
 USER_DB_COLLECTION = "users"
@@ -91,7 +91,27 @@ class UserAuthentication:
             self.logout()
             return False
         return True
-    
+
+    def is_current_user_owner(self)->AuthorizationStatus:
+        """Check if the user is the project owner"""
+        if not self.check_authentication():
+            return AuthorizationStatus.UNAUTHENTICATED
+        if is_project_owner(st.session_state.user_email):
+            return AuthorizationStatus.OWNER
+        return AuthorizationStatus.NON_OWNER
+
+    def require_authorization(self, role: User = None)->AuthorizationStatus:
+        """Get authorization status of the user"""
+        if not self.check_authentication():
+            return AuthorizationStatus.UNAUTHENTICATED
+        if not self._check_user_approval_status(
+            st.session_state.user_email):
+            return AuthorizationStatus.PENDING_APPROVAL
+        if role and st.session_state.user_role != role.value:
+            return AuthorizationStatus.UNAUTHORIZED
+        
+        return AuthorizationStatus.APPROVED
+
     @classmethod
     def _verify_token_validity(cls):
         """Verify if the current token is still valid"""

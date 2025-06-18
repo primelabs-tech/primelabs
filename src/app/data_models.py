@@ -14,6 +14,16 @@ class User(StrEnum):
     EMPLOYEE = "Employee"
 
 
+class AuthorizationStatus(StrEnum):
+    """Authorization status"""
+    PENDING_APPROVAL = "Pending Approval"
+    APPROVED = "Approved"
+    REJECTED = "Rejected"
+    UNAUTHENTICATED = "Unauthenticated"
+    UNAUTHORIZED = "Unauthorized"
+    OWNER = "Owner"
+    NON_OWNER = "Non-Owner"
+
 class DatabaseRecord(BaseModel):
     """
     Base class for all database records
