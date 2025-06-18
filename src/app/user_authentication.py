@@ -55,7 +55,7 @@ class UserAuthentication:
 
     def login(self, email: str, password: str):
         """Login user and return user email"""
-        if self._verify_token_validity():
+        if self.verify_token_validity():
             return
         try:
             user = self.auth_client.sign_in_with_email_and_password(
@@ -92,7 +92,7 @@ class UserAuthentication:
 
     def check_authentication(self):
         """Check if the user is authenticated"""
-        if not self._verify_token_validity():
+        if not self.verify_token_validity():
             self.logout()
             return False
         return True
@@ -109,7 +109,7 @@ class UserAuthentication:
         """Get authorization status of the user"""
         if not self.check_authentication():
             return AuthorizationStatus.UNAUTHENTICATED
-        if not self._check_user_approval_status(
+        if not self.check_user_approval_status(
             st.session_state.user_email):
             return AuthorizationStatus.PENDING_APPROVAL
         if role and st.session_state.user_role != role.value:
@@ -118,7 +118,7 @@ class UserAuthentication:
         return AuthorizationStatus.APPROVED
 
     @classmethod
-    def _verify_token_validity(cls):
+    def verify_token_validity(cls):
         """Verify if the current token is still valid"""
         if not hasattr(st.session_state, 'user_token') or not st.session_state.user_token:
             return False
@@ -129,9 +129,9 @@ class UserAuthentication:
             # Token is invalid or expired
             return False
     
-    def _check_user_approval_status(self, email):
+    def check_user_approval_status(self, email):
         """Check if user account is approved"""
-        if not UserAuthentication._verify_token_validity():
+        if not UserAuthentication.verify_token_validity():
             return False
         if is_project_owner(email):
             return True
