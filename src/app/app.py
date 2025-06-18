@@ -31,7 +31,7 @@ from logger import logger
 db = get_firestore()
 
 
-class Form:
+class MedicalRecordForm:
     def __init__(self):
         self.database_collection = DBCollectionNames(st.secrets["database_collection"]).value
     
@@ -187,7 +187,8 @@ class PrimeLabsUI:
         if st.session_state.get('show_admin', False):
             admin_user_management()
         else:
-            Form().render()
+            MedicalRecordForm().render()
+
 
 if __name__ == '__main__':
     ui = PrimeLabsUI()
