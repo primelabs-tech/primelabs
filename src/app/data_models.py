@@ -6,11 +6,23 @@ from pydantic import BaseModel, Field
 
 
 class User(StrEnum):
-    MANAGER = "Person 1"
-    SUPERVISOR = "Person 2"
-    DOCTOR = "Person 3"
-    OTHER = "Other"
+    """User roles"""
+    ADMIN = "Admin"
+    MANAGER = "Manager"
+    SUPERVISOR = "Supervisor"
+    DOCTOR = "Doctor"
+    EMPLOYEE = "Employee"
 
+
+class AuthorizationStatus(StrEnum):
+    """Authorization status"""
+    PENDING_APPROVAL = "Pending Approval"
+    APPROVED = "Approved"
+    REJECTED = "Rejected"
+    UNAUTHENTICATED = "Unauthenticated"
+    UNAUTHORIZED = "Unauthorized"
+    OWNER = "Owner"
+    NON_OWNER = "Non-Owner"
 
 class DatabaseRecord(BaseModel):
     """

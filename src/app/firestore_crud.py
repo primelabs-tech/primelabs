@@ -5,19 +5,11 @@ from google.cloud import firestore
 from google.cloud.exceptions import NotFound
 from google.oauth2 import service_account
 
-
-logger = logging.getLogger(__name__)
-
+from logger import logger
 
 
-class FirestoreCRUD:
-    def __init__(self, use_admin_sdk: bool = False):
-        """Initialize Firestore client with optional Admin SDK (now always uses google.cloud.firestore.Client)"""
-        self.db = self._initialize_firestore()
-        
-    def _initialize_firestore(self):
-        try:
-            credentials_dict = {
+def get_firestore_admin_credential_dict()->dict:
+    return {
                 "type": st.secrets["type"],
                 "project_id": st.secrets["project_id"],
                 "private_key_id": st.secrets["private_key_id"],
@@ -29,8 +21,20 @@ class FirestoreCRUD:
                 "auth_provider_x509_cert_url": st.secrets["auth_provider_x509_cert_url"],
                 "client_x509_cert_url": st.secrets["client_x509_cert_url"]
             }
+
+
+FIRESTORE_DB_ID = "firestore_database_id"
+
+class FirestoreCRUD:
+    def __init__(self, use_admin_sdk: bool = False):
+        """Initialize Firestore client with optional Admin SDK (now always uses google.cloud.firestore.Client)"""
+        self.db = self._initialize_firestore()
+        
+    def _initialize_firestore(self):
+        try:
+            credentials_dict = get_firestore_admin_credential_dict()
             creds = service_account.Credentials.from_service_account_info(credentials_dict)
-            database_id = st.secrets.get("firestore_database_id", "(default)")
+            database_id = st.secrets.get(FIRESTORE_DB_ID, "(default)")
             return firestore.Client(
                 project=st.secrets["project_id"],
                 credentials=creds,
@@ -120,4 +124,25 @@ class FirestoreCRUD:
             return [{"id": doc.id, **doc.to_dict()} for doc in docs]
         except Exception as e:
             logger.error(f"Query failed: {str(e)}")
+            raise
+
+    def get_docs(
+        self,
+        collection: str,
+        filters: List[tuple] = None,
+        limit: int = 100
+    ) -> List[Dict]:
+        """Get documents from collection with optional filters"""
+        try:
+            query = self.db.collection(collection)
+            
+            # Apply filters if provided
+            if filters:
+                for field, op, value in filters:
+                    query = query.where(field, op, value)
+            
+            docs = query.limit(limit).stream()
+            return [{"id": doc.id, **doc.to_dict()} for doc in docs]
+        except Exception as e:
+            logger.error(f"Get docs failed: {str(e)}")
             raise
