@@ -153,8 +153,10 @@ class OpeningScreen:
     
     def show_pending_approval_screen(self):
         """Show pending approval screen for users waiting for approval"""
-        html = get_pending_approval_html()
-        st.markdown(html, unsafe_allow_html=True)
+        # html = get_pending_approval_html()
+        # st.markdown(html, unsafe_allow_html=True)
+        from utils import show_pending_approval_page
+        show_pending_approval_page()
         
         # Add logout and refresh buttons
         col1, col2, col3 = st.columns([1, 1, 1])
@@ -393,6 +395,7 @@ class OpeningScreen:
                 
         except Exception as e:
             st.error(f"Error loading user management: {str(e)}")
+
 class PrimeLabsUI:
     def __init__(self):
         self.user_auth = get_user_authentication()
@@ -425,7 +428,7 @@ class PrimeLabsUI:
                 # Show admin menu if user is project owner
                 self.opening_screen.show_admin_menu()
             else:
-                self.opening_screen.login_screen()
+                self.opening_screen.opening_screen()
             
             st.session_state.times_loaded = st.session_state.get('times_loaded', 0)
             st.session_state.times_loaded += 1
