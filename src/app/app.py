@@ -24,7 +24,11 @@ from data_models import (
     DBCollectionNames,
 )
 from user_authentication import UserAuthentication
-from utils import get_firestore, get_user_authentication
+from utils import (
+    get_firestore, 
+    get_user_authentication,
+    get_pending_approval_html,
+)
 from logger import logger
 
 
@@ -153,10 +157,27 @@ class MedicalRecordForm:
 class LoginScreen:
     def __init__(self, user_auth: UserAuthentication):
         self.user_auth = user_auth
-
-    @classmethod
-    def show_pending_approval_screen(cls):
-        pass
+    
+    def show_pending_approval_screen(self):
+        """Show pending approval screen for users waiting for approval"""
+        if not self.user_auth.verify_token_validity():
+            self.token_expired_message()
+            # Show login login instead of pending screen
+            self.opening_screen()
+            return
+        
+        html = get_pending_approval_html()
+        st.markdown(html, unsafe_allow_html=True)
+        
+        # Add logout and refresh buttons
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col1:
+            if st.button("🔄 Refresh Status", use_container_width=True):
+                st.rerun()
+        with col3:
+            if st.button("🚪 Logout", use_container_width=True):
+                self.user_auth.logout()
+                st.rerun()
     
     def opening_screen(self):
         """Display login form and handle authentication"""
@@ -256,6 +277,10 @@ class LoginScreen:
             error_message = f"{operation} failed"            
         
         st.error(error_message)
+
+    def token_expired_message(self):
+        """Show token expired message"""
+        st.warning("⏰ Your session has expired. Please login again to continue.")
 
 
 class PrimeLabsUI:
