@@ -3,6 +3,12 @@ import logging
 from datetime import datetime
 
 import streamlit as st
+from auth import (
+    check_authentication, 
+    login_form, 
+    logout, 
+    require_auth
+)
 
 from data_models import (
     MedicalRecord,
@@ -16,7 +22,6 @@ from data_models import (
 from firestore_crud import FirestoreCRUD
 
 
-CURRENT_USER = User.SUPERVISOR.value
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -43,6 +48,9 @@ class Form:
         message_placeholder.empty()
     
     def render(self):
+        if not require_auth():
+            return
+            
         st.header('Medical Test Entry')
 
         ## Patient Information
@@ -135,7 +143,7 @@ class Form:
                     payment=payment,
                     date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     comments=comments,
-                    updated_by=CURRENT_USER
+                    updated_by=st.session_state.user_role
                 )
                 db.create_doc(
                     self.database_collection, 
@@ -155,6 +163,16 @@ class PrimeLabsUI:
         with st.sidebar:
             st.title('PrimeLabs')
             st.write('Primelabs management system')
+            
+            # Add login/logout buttons in sidebar
+            if check_authentication():
+                st.write(f"Logged in as: {st.session_state.user_email}")
+                st.write(f"Role: {st.session_state.user_role}")
+                if st.button("Logout"):
+                    logout()
+            else:
+                login_form()
+            
             st.session_state.times_loaded = st.session_state.get('times_loaded', 0)
             st.session_state.times_loaded += 1
             st.write(f"Times loaded: {st.session_state.times_loaded}")
