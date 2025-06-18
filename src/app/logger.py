@@ -9,9 +9,9 @@ class Logger:
         # Configure logging
         logging.basicConfig(
             level=logging.INFO,
-            format='%(asctime)s - %(name)s - %(levelname)s - [%(user_email)s:%(user_role)s] - %(message)s'
+            format='%(asctime)s [%(levelname)s] [%(user_email)s:%(user_role)s] %(filename)s:%(lineno)d: %(message)s'
         )
-        self.logger = logging.getLogger('PrimeLabs')
+        self.logger = logging.getLogger()
 
     def info(self, message: str, **kwargs: Any) -> None:
         """Log info level message"""
