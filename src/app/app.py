@@ -49,8 +49,8 @@ class MedicalRecordForm:
         time.sleep(3)
         message_placeholder.empty()
     
-    def render(self):
-        if not require_auth():
+    def render(self, is_authorized: bool = False):
+        if not is_authorized:
             return
             
         st.header('Medical Test Entry')
@@ -444,9 +444,10 @@ class PrimeLabsUI:
             
         # Show admin panel if requested
         if st.session_state.get('show_admin', False):
-            admin_user_management()
+            self.opening_screen.show_admin_user_management()
         else:
-            MedicalRecordForm().render()
+            authorization = self.user_auth.require_authorization()
+            MedicalRecordForm().render(authorization==AuthorizationStatus.APPROVED)
 
 
 if __name__ == '__main__':
