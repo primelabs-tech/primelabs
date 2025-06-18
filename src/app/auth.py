@@ -8,11 +8,11 @@ from data_models import User
 firebase_config = {
     "apiKey": st.secrets["web_api_key"],
     "authDomain": f"{st.secrets['project_id']}.firebaseapp.com",
+    "databaseURL": f"https://{st.secrets['project_id']}-default-rtdb.firebaseio.com/",
     "projectId": st.secrets["project_id"],
-    "storageBucket": f"{st.secrets['project_id']}.appspot.com",
+    "storageBucket": f"{st.secrets['project_id']}.firebasestorage.app",
     "messagingSenderId": st.secrets.get("messaging_sender_id", ""),
-    "appId": st.secrets.get("app_id", ""),
-    "databaseURL": ""  # Not needed for auth only
+    "appId": st.secrets.get("app_id", "")
 }
 
 firebase = pyrebase.initialize_app(firebase_config)
