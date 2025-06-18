@@ -5,10 +5,11 @@ from google.cloud import firestore
 from google.cloud.exceptions import NotFound
 from google.oauth2 import service_account
 
+from logger import logger
+from utils import get_firestore_admin_credential_dict
 
-logger = logging.getLogger(__name__)
 
-
+FIRESTORE_DB_ID = "firestore_database_id"
 
 class FirestoreCRUD:
     def __init__(self, use_admin_sdk: bool = False):
@@ -17,20 +18,9 @@ class FirestoreCRUD:
         
     def _initialize_firestore(self):
         try:
-            credentials_dict = {
-                "type": st.secrets["type"],
-                "project_id": st.secrets["project_id"],
-                "private_key_id": st.secrets["private_key_id"],
-                "private_key": st.secrets["private_key"].replace('\\n', '\n'),
-                "client_email": st.secrets["client_email"],
-                "client_id": st.secrets["client_id"],
-                "auth_uri": st.secrets["auth_uri"],
-                "token_uri": st.secrets["token_uri"],
-                "auth_provider_x509_cert_url": st.secrets["auth_provider_x509_cert_url"],
-                "client_x509_cert_url": st.secrets["client_x509_cert_url"]
-            }
+            credentials_dict = get_firestore_admin_credential_dict()
             creds = service_account.Credentials.from_service_account_info(credentials_dict)
-            database_id = st.secrets.get("firestore_database_id", "(default)")
+            database_id = st.secrets.get(FIRESTORE_DB_ID, "(default)")
             return firestore.Client(
                 project=st.secrets["project_id"],
                 credentials=creds,
