@@ -111,32 +111,9 @@ def test_firebase_config():
         return False
 
 
-def show_firebase_debug_info():
-    """Show Firebase debug information for troubleshooting"""
-    st.subheader("Firebase Debug Information")
-    
-    # Test configuration
-    if st.button("Test Firebase Configuration"):
-        test_firebase_config()
-    
-    # Show current configuration (without sensitive data)
-    st.write("**Current Configuration:**")
-    st.write(f"- Project ID: {st.secrets.get('project_id', 'Not set')}")
-    st.write(f"- Web API Key: {'*' * 20 + st.secrets.get('web_api_key', '')[-8:] if st.secrets.get('web_api_key') else 'Not set'}")
-    st.write(f"- Database Collection: {st.secrets.get('database_collection', 'Not set')}")
-    
-    # Add test account creation
-    st.markdown("---")
-    create_test_account()
-
-
 def login_form():
     """Display login form and handle authentication"""
     st.title("Login")
-    
-    # Add Firebase debug toggle
-    with st.expander("🔧 Debug Information", expanded=False):
-        show_firebase_debug_info()
     
     # Add registration option
     auth_mode = st.radio("Choose an option:", ["Login", "Register", "Reset Password"], horizontal=True)
@@ -578,45 +555,3 @@ def show_admin_menu():
         
         if st.sidebar.button("Hide Admin Panel"):
             st.session_state.show_admin = False
-
-
-def create_test_account():
-    """Create a test account for debugging purposes"""
-    st.subheader("Create Test Account")
-    
-    test_email = st.text_input("Test Email", value="test@primelabs.com", key="test_email")
-    test_password = st.text_input("Test Password", value="test123456", type="password", key="test_password")
-    
-    if st.button("Create Test Account", key="create_test"):
-        if test_email and test_password:
-            try:
-                # Create user with Firebase
-                user = firebase_auth.create_user_with_email_and_password(test_email, test_password)
-                
-                st.success(f"✅ Test account created successfully!")
-                st.info(f"User ID: {user['localId']}")
-                st.info(f"Email: {test_email}")
-                st.info("You can now try logging in with these credentials")
-                
-                # Store user with default role
-                from firestore_crud import FirestoreCRUD
-                db = FirestoreCRUD(use_admin_sdk=True)
-                
-                user_data = {
-                    "email": test_email,
-                    "role": User.DOCTOR,  # Default role
-                    "created_at": "test_account",
-                    "status": "approved"  # Auto-approve test account
-                }
-                
-                db.create_doc("users", user_data, doc_id=user['localId'])
-                st.success("✅ Test user data stored in Firestore")
-                
-            except Exception as e:
-                error_msg = str(e)
-                if "EMAIL_EXISTS" in error_msg:
-                    st.warning("Test account already exists. Try logging in with the credentials.")
-                else:
-                    st.error(f"❌ Failed to create test account: {error_msg}")
-        else:
-            st.error("Please provide both email and password")

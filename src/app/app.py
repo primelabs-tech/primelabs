@@ -24,18 +24,8 @@ from data_models import (
     User,
     DBCollectionNames,
 )
-from firestore_crud import FirestoreCRUD
-
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-
-
-@st.cache_resource
-def get_firestore():
-    return FirestoreCRUD(use_admin_sdk=True)
+from utils import get_firestore
+from logger import logger
 
 
 db = get_firestore()
