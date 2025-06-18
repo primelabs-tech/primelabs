@@ -3,7 +3,7 @@ firebase-admin==6.5.0
 pyrebase4==4.8.0
 PyJWT==2.8.0
 cryptography==42.0.8
-pyarrow==17.0.0
+# pyarrow>=10.0.0,<18.0.0  # Removed - not used in codebase
 pydantic==2.8.2
 pydantic_core==2.20.1
 python-dotenv==1.0.0
