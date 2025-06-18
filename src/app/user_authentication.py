@@ -72,14 +72,15 @@ class UserAuthentication:
             logger.error(f"Error logging in: {str(e)}")
             return False
 
-    def reset_password(self, email: str)->bool:
+    def reset_password(self, email: str)->tuple[bool, str]:
         """Send password reset email"""
         try:
             self.auth_client.send_password_reset_email(email)
-            return True
+            return True, ""
         except Exception as e:
-            logger.error(f"Error sending password reset email: {str(e)}")
-            return False
+            error_message = f"Error sending password reset email: {str(e)}"
+            logger.error(error_message)
+            return False, error_message
 
     def logout(self):
         """Logout the user"""

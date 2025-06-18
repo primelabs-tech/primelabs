@@ -14,7 +14,6 @@ from auth import (
     show_pending_approval_screen,
     show_token_expired_message
 )
-
 from data_models import (
     MedicalRecord,
     Patient, 
@@ -24,7 +23,8 @@ from data_models import (
     User,
     DBCollectionNames,
 )
-from utils import get_firestore
+from user_authentication import UserAuthentication
+from utils import get_firestore, get_user_authentication
 from logger import logger
 
 
@@ -150,9 +150,160 @@ class MedicalRecordForm:
                 st.write(e)
 
 
+
+class LoginScreen:
+    def __init__(self, user_auth: UserAuthentication):
+        self.user_auth = user_auth
+
+    @classmethod
+    def show_pending_approval_screen(cls):
+        pass
+    
+    def login_screen(self):
+        """Display login form and handle authentication"""
+        st.title("Login")
+        
+        auth_mode = st.radio("Choose an option:", ["Login", "Register", "Reset Password"], horizontal=True)
+        
+        if auth_mode == "Reset Password":
+            self.()
+            return
+        
+        email = st.text_input("Email")
+        password = st.text_input("Password", type="password")
+        
+        if auth_mode == "Login":
+            if st.button("Sign In"):
+                if email and password:
+                    try:
+                        # Authenticate with Firebase
+                        user = firebase_auth.sign_in_with_email_and_password(email, password)
+                        
+                        # Verify the token with Firebase Admin SDK
+                        decoded_token = auth.verify_id_token(user['idToken'])
+                        user_email = decoded_token['email']
+                        
+                        # Check approval status before proceeding
+                        if not check_user_approval_status(user_email):
+                            # Set minimal session state for pending users
+                            st.session_state.authenticated = True
+                            st.session_state.user_email = user_email
+                            st.session_state.user_role = User.DOCTOR  # Temporary role
+                            st.session_state.user_token = user['idToken']
+                            st.session_state.user_id = decoded_token['uid']
+                            st.rerun()
+                            return
+                        
+                        # Get user role from Firestore or use default mapping
+                        user_role = get_user_role(user_email)
+                        
+                        # Set session state
+                        st.session_state.authenticated = True
+                        st.session_state.user_role = user_role
+                        st.session_state.user_email = user_email
+                        st.session_state.user_token = user['idToken']
+                        st.session_state.user_id = decoded_token['uid']
+                        
+                        st.success("Login successful!")
+                        st.rerun()
+                        
+                    except Exception as e:
+                        error_message = str(e)
+                        st.error(f"Full error details: {error_message}")
+                        
+                        # Log the error for debugging
+                        import logging
+                        logging.error(f"Authentication error: {error_message}")
+                        
+                        if "INVALID_EMAIL" in error_message:
+                            st.error("Invalid email format")
+                        elif "EMAIL_NOT_FOUND" in error_message:
+                            st.error("No account found with this email")
+                        elif "INVALID_PASSWORD" in error_message or "INVALID_LOGIN_CREDENTIALS" in error_message:
+                            st.error("Incorrect password or invalid login credentials")
+                        elif "TOO_MANY_ATTEMPTS_TRY_LATER" in error_message:
+                            st.error("Too many failed attempts. Please try again later")
+                        elif "USER_DISABLED" in error_message:
+                            st.error("This user account has been disabled")
+                        elif "WEAK_PASSWORD" in error_message:
+                            st.error("Password is too weak. Please choose a stronger password")
+                        else:
+                            st.error(f"Authentication failed: {error_message}")
+                            
+                        # Additional debugging information
+                        st.info("Debugging tips:")
+                        st.info("1. Make sure you're using the correct email and password")
+                        st.info("2. Try registering a new account if you haven't already")
+                        st.info("3. Check if your email requires verification")
+                        st.info("4. Ensure you have a stable internet connection")
+                else:
+                    st.error("Please enter both email and password")
+        
+        else:  # Register mode
+            confirm_password = st.text_input("Confirm Password", type="password")
+            
+            if st.button("Register"):
+                if email and password and confirm_password:
+                    if password != confirm_password:
+                        st.error("Passwords do not match")
+                        return
+                        
+                    try:
+                        # Create user with Firebase
+                        user = firebase_auth.create_user_with_email_and_password(email, password)
+                        
+                        # Store user with default role (Doctor) - only owner can change roles
+                        from firestore_crud import FirestoreCRUD
+                        db = FirestoreCRUD(use_admin_sdk=True)
+                        
+                        user_data = {
+                            "email": email,
+                            "role": User.DOCTOR,  # Default role for all new users
+                            "created_at": st.session_state.get('timestamp', 'unknown'),
+                            "status": "pending_approval"  # Require owner approval
+                        }
+                        
+                        db.create_doc("users", user_data, doc_id=user['localId'])
+                        
+                        st.success("Registration successful! Your account has been created with Doctor role. Contact the system administrator to request role changes.")
+                        
+                    except Exception as e:
+                        if "EMAIL_EXISTS" in str(e):
+                            st.error("An account with this email already exists")
+                        elif "WEAK_PASSWORD" in str(e):
+                            st.error("Password should be at least 6 characters")
+                        elif "INVALID_EMAIL" in str(e):
+                            st.error("Invalid email format")
+                        else:
+                            st.error(f"Registration failed: {str(e)}")
+                else:
+                    st.error("Please fill in all fields")
+
+
+    def reset_password_screen(self):
+        """Handle password reset"""
+        st.subheader("Reset Password")
+        reset_email = st.text_input("Enter your email address")
+        
+        if st.button("Send Reset Email"):
+            if not reset_email:
+                st.error("Please enter your email address")
+                return
+            is_email_sent, error_message = self.user_auth.reset_password(reset_email)
+            if is_email_sent:
+                st.success("Password reset email sent! Check your inbox.")
+            elif "EMAIL_NOT_FOUND" in error_message:
+                st.error("No account found with this email address")
+            else:
+                st.error(f"Error sending reset email: {str(e)}")
+            
+                
+
+
+
 class PrimeLabsUI:
     def __init__(self):
-        pass
+        self.user_auth = get_user_authentication()
 
     def render(self):
         # Check if user is authenticated and approved before rendering anything
