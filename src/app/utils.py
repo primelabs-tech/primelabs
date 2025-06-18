@@ -1,21 +1,6 @@
 import streamlit as st
-from firestore_crud import FirestoreCRUD
-from user_authentication import UserAuthentication
-
-def get_firestore_admin_credential_dict()->dict:
-    return {
-                "type": st.secrets["type"],
-                "project_id": st.secrets["project_id"],
-                "private_key_id": st.secrets["private_key_id"],
-                "private_key": st.secrets["private_key"].replace('\\n', '\n'),
-                "client_email": st.secrets["client_email"],
-                "client_id": st.secrets["client_id"],
-                "auth_uri": st.secrets["auth_uri"],
-                "token_uri": st.secrets["token_uri"],
-                "auth_provider_x509_cert_url": st.secrets["auth_provider_x509_cert_url"],
-                "client_x509_cert_url": st.secrets["client_x509_cert_url"]
-            }
-
+# from firestore_crud import FirestoreCRUD - removed to break circular import
+# from user_authentication import UserAuthentication - removed to break circular import
 
 def get_firebase_auth_config():
     return  {
@@ -38,11 +23,13 @@ def is_project_owner(email):
 
 @st.cache_resource
 def get_firestore():
+    from firestore_crud import FirestoreCRUD
     return FirestoreCRUD()
 
 
 @st.cache_resource
 def get_user_authentication():
+    from user_authentication import UserAuthentication
     return UserAuthentication()
 
 

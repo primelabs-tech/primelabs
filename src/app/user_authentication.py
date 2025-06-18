@@ -1,14 +1,15 @@
 from typing import Optional
 
 import streamlit as st
+import pyrebase
 from google.cloud import firestore
 import firebase_admin
 from firebase_admin import credentials, auth
 from google.oauth2 import service_account
 
 from logger import logger
+from firestore_crud import get_firestore_admin_credential_dict, FirestoreCRUD
 from utils import (
-    get_firestore_admin_credential_dict,
     get_firebase_auth_config,
     get_firestore,
     is_project_owner,
