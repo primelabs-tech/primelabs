@@ -7,7 +7,12 @@ from auth import (
     check_authentication, 
     login_form, 
     logout, 
-    require_auth
+    require_auth,
+    show_admin_menu,
+    admin_user_management,
+    check_user_approval_status,
+    show_pending_approval_screen,
+    show_token_expired_message
 )
 
 from data_models import (
@@ -160,6 +165,14 @@ class PrimeLabsUI:
         pass
 
     def render(self):
+        # Check if user is authenticated and approved before rendering anything
+        if check_authentication():
+            # Check approval status for authenticated users
+            if not check_user_approval_status(st.session_state.user_email):
+                # Show pending approval screen and block all other content
+                show_pending_approval_screen()
+                return
+        
         with st.sidebar:
             st.title('PrimeLabs')
             st.write('Primelabs management system')
@@ -170,6 +183,9 @@ class PrimeLabsUI:
                 st.write(f"Role: {st.session_state.user_role}")
                 if st.button("Logout"):
                     logout()
+                
+                # Show admin menu if user is project owner
+                show_admin_menu()
             else:
                 login_form()
             
@@ -177,7 +193,11 @@ class PrimeLabsUI:
             st.session_state.times_loaded += 1
             st.write(f"Times loaded: {st.session_state.times_loaded}")
             
-        Form().render()
+        # Show admin panel if requested
+        if st.session_state.get('show_admin', False):
+            admin_user_management()
+        else:
+            Form().render()
 
 if __name__ == '__main__':
     ui = PrimeLabsUI()

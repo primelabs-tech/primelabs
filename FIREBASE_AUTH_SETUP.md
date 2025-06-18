@@ -62,6 +62,9 @@ app_id = "your-app-id"  # Optional
 
 # Database Configuration
 database_collection = "medical_records"
+
+# Project Owner Configuration
+project_owner_email = "owner@primelabs.com"
 ```
 
 ### Important Notes:
@@ -102,7 +105,8 @@ The implemented authentication system includes:
 
 ### 5.1 User Registration
 - New users can register with email and password
-- Users select their role during registration (Doctor, Supervisor, Manager)
+- All new users are automatically assigned the "Doctor" role
+- Users are marked as "pending_approval" until approved by the project owner
 - User data is stored in Firestore
 
 ### 5.2 User Login
@@ -119,15 +123,28 @@ The implemented authentication system includes:
 - Session expiry handling
 - Secure logout
 
+### 5.5 Role Management (Owner Only)
+- Only the designated project owner can assign and modify user roles
+- Project owner has access to an admin panel for user management
+- New users require owner approval before gaining access
+- Role changes are tracked with audit logs
+
 ## Step 6: User Roles
 
 The system supports three user roles:
 
-- **Doctor**: Basic access to medical records
+- **Doctor**: Basic access to medical records (default role for new users)
 - **Supervisor**: Enhanced access with supervisory privileges
 - **Manager**: Full administrative access
 
-Roles are stored in Firestore and retrieved during authentication.
+### Role Assignment Process:
+
+1. **New User Registration**: All users start with "Doctor" role and "pending_approval" status
+2. **Owner Approval**: The project owner must approve new users through the admin panel
+3. **Role Assignment**: Only the project owner can change user roles after approval
+4. **Project Owner**: Automatically gets "Manager" role and full admin access
+
+Roles are stored in Firestore and retrieved during authentication. The project owner email is configured in the secrets file.
 
 ## Step 7: Running the Application
 
