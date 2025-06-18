@@ -29,8 +29,9 @@ class UserAuthentication:
     
     def register(self, 
                     email: str, 
-                    password: str)->bool:
+                    password: str)->tuple[bool, str]:
         """Create user in firebase auth and db"""
+        user = None
         try:
             user = self.auth_client.create_user_with_email_and_password(
                         email, password)
@@ -44,10 +45,13 @@ class UserAuthentication:
                 user_data,
                 doc_id=user['localId']
             )
-            return True
+            return True, ""
         except Exception as e:
-            logger.error(f"Error creating user: {str(e)}")
-            return False
+            if user:
+                self.auth_client.delete_user(user['localId'])
+            error_message = f"Error creating user: {str(e)}"
+            logger.error(error_message)
+            return False, error_message
 
     def login(self, email: str, password: str):
         """Login user and return user email"""
@@ -66,11 +70,11 @@ class UserAuthentication:
             st.session_state.user_token = user['idToken']
             st.session_state.user_id = decoded_token['uid']
 
-            return True
-            logger.info("User successfully logged in")
+            return True, ""
         except Exception as e:
-            logger.error(f"Error logging in: {str(e)}")
-            return False
+            error_message = f"Error logging in: {str(e)}"
+            logger.error(error_message)
+            return False, error_message
 
     def reset_password(self, email: str)->tuple[bool, str]:
         """Send password reset email"""
