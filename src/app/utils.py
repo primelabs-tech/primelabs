@@ -1,6 +1,6 @@
 import streamlit as st
 from firestore_crud import FirestoreCRUD
-
+from user_authentication import UserAuthentication
 
 def get_firestore_admin_credential_dict()->dict:
     return {
@@ -39,3 +39,8 @@ def is_project_owner(email):
 @st.cache_resource
 def get_firestore():
     return FirestoreCRUD()
+
+
+@st.cache_resource
+def get_user_authentication():
+    return UserAuthentication()

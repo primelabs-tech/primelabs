@@ -25,8 +25,9 @@ class UserAuthentication:
         self.auth_client = self._get_auth_client()
         self.db: FirestoreCRUD = get_firestore()
         self.auth_client = self._get_auth_client()
+        self._initialize_session_state()
     
-    def create_user(self, 
+    def register(self, 
                     email: str, 
                     password: str)->bool:
         """Create user in firebase auth and db"""
@@ -57,7 +58,7 @@ class UserAuthentication:
                         email, password)
             decoded_token = auth.verify_id_token(user['idToken'])
             user_email = decoded_token['email']
-            user_role = self.get_user_role(user_email).value
+            user_role = self._get_user_role(user_email).value
             
             st.session_state.authenticated = True
             st.session_state.user_role = user_role
@@ -70,6 +71,26 @@ class UserAuthentication:
         except Exception as e:
             logger.error(f"Error logging in: {str(e)}")
             return False
+
+    def reset_password(self, email: str)->bool:
+        """Send password reset email"""
+        try:
+            self.auth_client.send_password_reset_email(email)
+            return True
+        except Exception as e:
+            logger.error(f"Error sending password reset email: {str(e)}")
+            return False
+
+    def logout(self):
+        """Logout the user"""
+        self._initialize_session_state()
+
+    def check_authentication(self):
+        """Check if the user is authenticated"""
+        if not self._verify_token_validity():
+            self.logout()
+            return False
+        return True
     
     @classmethod
     def _verify_token_validity(cls):
@@ -106,7 +127,7 @@ class UserAuthentication:
             st.error(f"Error checking user status: {str(e)}")
             return False    
 
-    def get_user_role(self, email)->User:
+    def _get_user_role(self, email)->User:
         """Get user role from db or return default role"""
         try:
             user_docs = self.db.get_docs(
@@ -124,15 +145,6 @@ class UserAuthentication:
         except Exception as e:
             st.error(f"Error getting user role: {str(e)}")
             return User.EMPLOYEE
-
-    def logout(self):
-        pass
-
-    def register(self):
-        pass
-
-    def reset_password(self):
-        pass
         
     def _initialize_webapp(self):
         try:
@@ -147,6 +159,13 @@ class UserAuthentication:
         auth_config = get_firebase_auth_config()
         firebase = pyrebase.initialize_app(auth_config)
         return firebase.auth()
+
+    def _initialize_session_state(self):
+        st.session_state.authenticated = False
+        st.session_state.user_role = None
+        st.session_state.user_email = None
+        st.session_state.user_token = None
+        st.session_state.user_id = None
 
 if __name__ == "__main__":
     user_auth = UserAuthentication()
