@@ -9,7 +9,7 @@ from data_models import (
     Doctor, 
     MedicalTest,  
     Payment, 
-    User,
+    UserRole,
     DBCollectionNames,
     AuthorizationStatus,
 )
@@ -523,7 +523,7 @@ class OpeningScreen:
             for i, user_doc in enumerate(users):
                 user_data = user_doc
                 email = user_data.get('email', 'Unknown')
-                current_role = user_data.get('role', User.EMPLOYEE)
+                current_role = user_data.get('role', UserRole.EMPLOYEE)
                 status = user_data.get('status', AuthorizationStatus.PENDING_APPROVAL)
                 
                 # Skip the owner's own account
@@ -542,8 +542,8 @@ class OpeningScreen:
                     with col3:
                         new_role = st.selectbox(
                             "Role",
-                            options=list(User),
-                            index=list(User).index(current_role),
+                            options=list(UserRole),
+                            index=list(UserRole).index(current_role),
                             key=f"role_{i}"
                         )
                     

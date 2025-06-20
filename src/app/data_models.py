@@ -5,7 +5,7 @@ from strenum import StrEnum
 from pydantic import BaseModel, Field
 
 
-class User(StrEnum):
+class UserRole(StrEnum):
     """User roles"""
     ADMIN = "Admin"
     MANAGER = "Manager"
@@ -29,7 +29,7 @@ class DatabaseRecord(BaseModel):
     Base class for all database records
     """
     date: datetime = Field(description="Date time of the record", default=datetime.now())
-    updated_by: User = Field(description="Last updated by")
+    updated_by: UserRole = Field(description="Last updated by")
 
 
 class Patient(BaseModel):
@@ -105,8 +105,8 @@ class ExpenseRecord(DatabaseRecord):
 
 
 class LedgerRecord(DatabaseRecord):
-    initiator: User = Field(description="User who initiated the payment")
-    benefactor: User = Field(description="User who collected the payment")
+    initiator: UserRole = Field(description="User who initiated the payment")
+    benefactor: UserRole = Field(description="User who collected the payment")
     amount: int = Field(description="Amount of the payment")
     description: str = Field(description="Description of the payment", default=None)
 
@@ -130,7 +130,7 @@ class DBCollectionNames(StrEnum):
 
 if __name__=="__main__":
 
-    CURRENT_USER = User.SUPERVISOR.value
+    CURRENT_USER = UserRole.SUPERVISOR.value
     
     medical_entry = MedicalRecord(
         patient=Patient(name="John Doe"),
