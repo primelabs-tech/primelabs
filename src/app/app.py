@@ -87,7 +87,7 @@ class MedicalRecordForm:
                     st.write(f"• Comments: {medical_record.comments}")
         
         # Auto-hide after 5 seconds
-        time.sleep(5)
+        time.sleep(8)
         # Reset processing state before rerun
         st.session_state.processing_submission = False
         st.rerun()
