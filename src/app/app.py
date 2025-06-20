@@ -301,8 +301,8 @@ class MedicalRecordForm:
         
         # FORM SUBMISSION LOGIC
         if submit_button:
-            with st.spinner('💾 Saving medical record...'):
-                try:
+            try:
+                with st.spinner('💾 Saving medical record...'):
                     # Create patient object
                     patient = Patient(name=patient_name.strip())
                     if phone_available and patient_phone:
@@ -341,10 +341,10 @@ class MedicalRecordForm:
                     # Clear form by rerunning (optional)
                     # st.rerun()
 
-                except Exception as e:
-                    st.error(f"❌ **Error saving record:** {str(e)}")
-                    st.error("Please try again or contact system administrator if the problem persists.")
-                    logger.error(f"Error saving medical record: {str(e)}")
+            except Exception as e:
+                st.error(f"❌ **Error saving record:** {str(e)}")
+                st.error("Please try again or contact system administrator if the problem persists.")
+                logger.error(f"Error saving medical record: {str(e)}")
 
 
 class OpeningScreen:
