@@ -88,6 +88,8 @@ class MedicalRecordForm:
         
         # Auto-hide after 5 seconds
         time.sleep(5)
+        # Reset processing state before rerun
+        st.session_state.processing_submission = False
         st.rerun()
     
     def render(self, is_authorized: bool = False):
@@ -103,9 +105,11 @@ class MedicalRecordForm:
         </div>
         """, unsafe_allow_html=True)
         
-        # Initialize session state for form validation
+        # Initialize session state for form validation and submission tracking
         if 'form_errors' not in st.session_state:
             st.session_state.form_errors = {}
+        if 'processing_submission' not in st.session_state:
+            st.session_state.processing_submission = False
         
         # Form container with better styling
         with st.container():
@@ -277,7 +281,8 @@ class MedicalRecordForm:
                 can_submit = (
                     patient_name and 
                     len(patient_name.strip()) >= 2 and
-                    payment_amount > 0
+                    payment_amount > 0 and
+                    not st.session_state.processing_submission  # Disable while processing
                 )
                 
                 if through_referral:
@@ -286,11 +291,19 @@ class MedicalRecordForm:
                 if phone_available:
                     can_submit = can_submit and patient_phone and self.validate_phone_number(patient_phone)[0]
                 
+                # Show processing status if submitting
+                if st.session_state.processing_submission:
+                    button_label = '⏳ Processing...'
+                    help_text = "Please wait while your record is being saved"
+                else:
+                    button_label = '💾 Submit Medical Record'
+                    help_text = "Complete all required fields to enable submission" if not can_submit else "Click to save the medical record"
+                
                 submit_button = st.button(
-                    label='💾 Submit Medical Record',
+                    label=button_label,
                     disabled=not can_submit,
                     use_container_width=True,
-                    help="Complete all required fields to enable submission" if not can_submit else "Click to save the medical record"
+                    help=help_text
                 )
             
             # Show required fields reminder
@@ -301,6 +314,8 @@ class MedicalRecordForm:
         
         # FORM SUBMISSION LOGIC
         if submit_button:
+            # Set processing state to disable the button
+            st.session_state.processing_submission = True
             try:
                 with st.spinner('💾 Saving medical record...'):
                     # Create patient object
@@ -342,6 +357,8 @@ class MedicalRecordForm:
                     # st.rerun()
 
             except Exception as e:
+                # Reset processing state on error
+                st.session_state.processing_submission = False
                 st.error(f"❌ **Error saving record:** {str(e)}")
                 st.error("Please try again or contact system administrator if the problem persists.")
                 logger.error(f"Error saving medical record: {str(e)}")
