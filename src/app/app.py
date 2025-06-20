@@ -254,7 +254,7 @@ class MedicalRecordForm:
                             st.success(f"✅ Full payment received (₹{payment_amount:,})")
                         else:
                             remaining = test_price_num - payment_amount
-                            st.warning(f"⚠️ Partial payment. Remaining: ₹{remaining:,}")
+                            st.warning(f"⚠️ Partial payment. Discount: ₹{remaining:,}")
                     else:
                         st.info("💡 Please enter the payment amount")
                 
@@ -326,7 +326,7 @@ class MedicalRecordForm:
                         payment=Payment(amount=payment_amount),
                         date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         comments=comments.strip() if comments else "",
-                        updated_by=st.session_state.user_role
+                        updated_by=st.session_state.user_email
                     )
                     
                     # Save to database
