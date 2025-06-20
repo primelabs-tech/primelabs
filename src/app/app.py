@@ -9,7 +9,7 @@ from data_models import (
     Doctor, 
     MedicalTest,  
     Payment, 
-    User,
+    UserRole,
     DBCollectionNames,
     AuthorizationStatus,
 )
@@ -85,10 +85,18 @@ class MedicalRecordForm:
                 st.write(f"• Date: {medical_record.date}")
                 if medical_record.comments:
                     st.write(f"• Comments: {medical_record.comments}")
-        
-        # Auto-hide after 5 seconds
-        time.sleep(5)
-        st.rerun()
+    
+    def clear_form_fields(self):
+        """Clear all form fields from session state"""
+        form_keys_to_clear = [
+            'patient_name', 'patient_phone', 'patient_address',
+            'phone_checkbox', 'address_checkbox', 'referral_checkbox',
+            'doctor_name', 'doctor_location', 'test_type', 'payment_amount',
+            'comments'
+        ]
+        for key in form_keys_to_clear:
+            if key in st.session_state:
+                del st.session_state[key]
     
     def render(self, is_authorized: bool = False):
         if not is_authorized:
@@ -103,9 +111,30 @@ class MedicalRecordForm:
         </div>
         """, unsafe_allow_html=True)
         
-        # Initialize session state for form validation
+        # Initialize session state for form validation and submission tracking
         if 'form_errors' not in st.session_state:
             st.session_state.form_errors = {}
+        if 'processing_submission' not in st.session_state:
+            st.session_state.processing_submission = False
+        if 'show_success' not in st.session_state:
+            st.session_state.show_success = False
+        if 'last_record' not in st.session_state:
+            st.session_state.last_record = None
+        
+        # Show success message if we just completed a submission
+        if st.session_state.show_success and st.session_state.last_record:
+            self.show_success_message(st.session_state.last_record)
+            
+            # Add button to start new entry
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col2:
+                if st.button("➕ Add New Record", use_container_width=True):
+                    # Clear success state and form
+                    st.session_state.show_success = False
+                    st.session_state.last_record = None
+                    self.clear_form_fields()
+                    st.rerun()
+            return
         
         # Form container with better styling
         with st.container():
@@ -254,7 +283,7 @@ class MedicalRecordForm:
                             st.success(f"✅ Full payment received (₹{payment_amount:,})")
                         else:
                             remaining = test_price_num - payment_amount
-                            st.warning(f"⚠️ Partial payment. Remaining: ₹{remaining:,}")
+                            st.warning(f"⚠️ Partial payment. Discount: ₹{remaining:,}")
                     else:
                         st.info("💡 Please enter the payment amount")
                 
@@ -277,7 +306,8 @@ class MedicalRecordForm:
                 can_submit = (
                     patient_name and 
                     len(patient_name.strip()) >= 2 and
-                    payment_amount > 0
+                    payment_amount > 0 and
+                    not st.session_state.processing_submission  # Disable while processing
                 )
                 
                 if through_referral:
@@ -286,11 +316,19 @@ class MedicalRecordForm:
                 if phone_available:
                     can_submit = can_submit and patient_phone and self.validate_phone_number(patient_phone)[0]
                 
+                # Show processing status if submitting
+                if st.session_state.processing_submission:
+                    button_label = '⏳ Processing...'
+                    help_text = "Please wait while your record is being saved"
+                else:
+                    button_label = '💾 Submit Medical Record'
+                    help_text = "Complete all required fields to enable submission" if not can_submit else "Click to save the medical record"
+                
                 submit_button = st.button(
-                    label='💾 Submit Medical Record',
+                    label=button_label,
                     disabled=not can_submit,
                     use_container_width=True,
-                    help="Complete all required fields to enable submission" if not can_submit else "Click to save the medical record"
+                    help=help_text
                 )
             
             # Show required fields reminder
@@ -301,8 +339,10 @@ class MedicalRecordForm:
         
         # FORM SUBMISSION LOGIC
         if submit_button:
-            with st.spinner('💾 Saving medical record...'):
-                try:
+            # Set processing state to disable the button
+            st.session_state.processing_submission = True
+            try:
+                with st.spinner('💾 Saving medical record...'):
                     # Create patient object
                     patient = Patient(name=patient_name.strip())
                     if phone_available and patient_phone:
@@ -326,7 +366,8 @@ class MedicalRecordForm:
                         payment=Payment(amount=payment_amount),
                         date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         comments=comments.strip() if comments else "",
-                        updated_by=st.session_state.user_role
+                        updated_by=st.session_state.user_role,
+                        updated_by_email=st.session_state.user_email
                     )
                     
                     # Save to database
@@ -334,17 +375,24 @@ class MedicalRecordForm:
                         self.database_collection, 
                         medical_entry.model_dump(mode="json")
                     )
-                    
-                    # Show success message
-                    self.show_success_message(medical_entry)
-                    
-                    # Clear form by rerunning (optional)
-                    # st.rerun()
+                
+                # Set success state and record for display
+                st.session_state.show_success = True
+                st.session_state.last_record = medical_entry
+                st.session_state.processing_submission = False
+                
+                # Clear form fields immediately after successful save
+                self.clear_form_fields()
+                
+                # Rerun to show success screen
+                st.rerun()
 
-                except Exception as e:
-                    st.error(f"❌ **Error saving record:** {str(e)}")
-                    st.error("Please try again or contact system administrator if the problem persists.")
-                    logger.error(f"Error saving medical record: {str(e)}")
+            except Exception as e:
+                # Reset processing state on error
+                st.session_state.processing_submission = False
+                st.error(f"❌ **Error saving record:** {str(e)}")
+                st.error("Please try again or contact system administrator if the problem persists.")
+                logger.error(f"Error saving medical record: {str(e)}")
 
 
 class OpeningScreen:
@@ -506,7 +554,7 @@ class OpeningScreen:
             for i, user_doc in enumerate(users):
                 user_data = user_doc
                 email = user_data.get('email', 'Unknown')
-                current_role = user_data.get('role', User.EMPLOYEE)
+                current_role = user_data.get('role', UserRole.EMPLOYEE)
                 status = user_data.get('status', AuthorizationStatus.PENDING_APPROVAL)
                 
                 # Skip the owner's own account
@@ -525,8 +573,8 @@ class OpeningScreen:
                     with col3:
                         new_role = st.selectbox(
                             "Role",
-                            options=list(User),
-                            index=list(User).index(current_role),
+                            options=list(UserRole),
+                            index=list(UserRole).index(current_role),
                             key=f"role_{i}"
                         )
                     

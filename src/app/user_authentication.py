@@ -6,6 +6,7 @@ from google.cloud import firestore
 import firebase_admin
 from firebase_admin import credentials, auth
 from google.oauth2 import service_account
+from datetime import datetime
 
 from logger import logger
 from firestore_crud import get_firestore_admin_credential_dict, FirestoreCRUD
@@ -14,7 +15,7 @@ from utils import (
     get_firestore,
     is_project_owner,
 )
-from data_models import User, AuthorizationStatus
+from data_models import UserRole, AuthorizationStatus
 
 
 USER_DB_COLLECTION = "users"
@@ -38,7 +39,7 @@ class UserAuthentication:
                         email, password)
             user_data = {
                 "email": email, 
-                "role": User.EMPLOYEE.value, 
+                "role": UserRole.EMPLOYEE.value, 
                 "status": "pending_approval"
             }
             self.db.create_doc(
@@ -106,7 +107,7 @@ class UserAuthentication:
             return AuthorizationStatus.OWNER
         return AuthorizationStatus.NON_OWNER
 
-    def require_authorization(self, role: User = None)->AuthorizationStatus:
+    def require_authorization(self, role: UserRole = None)->AuthorizationStatus:
         """Get authorization status of the user"""
         if not self.check_authentication():
             return AuthorizationStatus.UNAUTHENTICATED
@@ -153,7 +154,7 @@ class UserAuthentication:
             st.error(f"Error checking user status: {str(e)}")
             return False    
 
-    def _get_user_role(self, email)->User:
+    def _get_user_role(self, email)->UserRole:
         """Get user role from db or return default role"""
         try:
             user_docs = self.db.get_docs(
@@ -162,15 +163,15 @@ class UserAuthentication:
                         )
             if user_docs:
                 user_data = user_docs[0]
-                return User(user_data.get("role", User.EMPLOYEE.value))
+                return UserRole(user_data.get("role", UserRole.EMPLOYEE.value))
             elif is_project_owner(email):
-                return User.ADMIN
+                return UserRole.ADMIN
             else:
-                return User.EMPLOYEE
+                return UserRole.EMPLOYEE
                 
         except Exception as e:
             st.error(f"Error getting user role: {str(e)}")
-            return User.EMPLOYEE
+            return UserRole.EMPLOYEE
         
     def _initialize_webapp(self):
         try:
