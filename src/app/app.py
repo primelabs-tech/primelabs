@@ -85,10 +85,9 @@ class MedicalRecordForm:
                 st.write(f"• Date: {medical_record.date}")
                 if medical_record.comments:
                     st.write(f"• Comments: {medical_record.comments}")
-        
-        # Auto-hide after 5 seconds
-        time.sleep(8)
-        # Clear all form fields after successful submission
+    
+    def clear_form_fields(self):
+        """Clear all form fields from session state"""
         form_keys_to_clear = [
             'patient_name', 'patient_phone', 'patient_address',
             'phone_checkbox', 'address_checkbox', 'referral_checkbox',
@@ -98,10 +97,6 @@ class MedicalRecordForm:
         for key in form_keys_to_clear:
             if key in st.session_state:
                 del st.session_state[key]
-        
-        # Reset processing state before rerun
-        st.session_state.processing_submission = False
-        st.rerun()
     
     def render(self, is_authorized: bool = False):
         if not is_authorized:
@@ -121,6 +116,25 @@ class MedicalRecordForm:
             st.session_state.form_errors = {}
         if 'processing_submission' not in st.session_state:
             st.session_state.processing_submission = False
+        if 'show_success' not in st.session_state:
+            st.session_state.show_success = False
+        if 'last_record' not in st.session_state:
+            st.session_state.last_record = None
+        
+        # Show success message if we just completed a submission
+        if st.session_state.show_success and st.session_state.last_record:
+            self.show_success_message(st.session_state.last_record)
+            
+            # Add button to start new entry
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col2:
+                if st.button("➕ Add New Record", use_container_width=True):
+                    # Clear success state and form
+                    st.session_state.show_success = False
+                    st.session_state.last_record = None
+                    self.clear_form_fields()
+                    st.rerun()
+            return
         
         # Form container with better styling
         with st.container():
@@ -362,11 +376,16 @@ class MedicalRecordForm:
                         medical_entry.model_dump(mode="json")
                     )
                 
-                # Show success message (outside spinner context)
-                self.show_success_message(medical_entry)
-                    
-                    # Clear form by rerunning (optional)
-                    # st.rerun()
+                # Set success state and record for display
+                st.session_state.show_success = True
+                st.session_state.last_record = medical_entry
+                st.session_state.processing_submission = False
+                
+                # Clear form fields immediately after successful save
+                self.clear_form_fields()
+                
+                # Rerun to show success screen
+                st.rerun()
 
             except Exception as e:
                 # Reset processing state on error
