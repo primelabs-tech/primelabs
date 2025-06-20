@@ -30,6 +30,7 @@ class DatabaseRecord(BaseModel):
     """
     date: datetime = Field(description="Date time of the record", default=datetime.now())
     updated_by: UserRole = Field(description="Last updated by")
+    updated_by_email: str = Field(description="Email of the user who last updated the record")
 
 
 class Patient(BaseModel):
@@ -138,6 +139,7 @@ if __name__=="__main__":
         medical_test=MedicalTest(name="Blood Test", price=200),
         payment=Payment(amount=200),
         comments="Test comments",
-        updated_by=CURRENT_USER
+        updated_by=CURRENT_USER,
+        updated_by_email="test@example.com"
     )
     print (medical_entry.model_dump(mode="json"))

@@ -341,7 +341,8 @@ class MedicalRecordForm:
                         payment=Payment(amount=payment_amount),
                         date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         comments=comments.strip() if comments else "",
-                        updated_by=st.session_state.user_email
+                        updated_by=st.session_state.user_role,
+                        updated_by_email=st.session_state.user_email
                     )
                     
                     # Save to database
