@@ -349,9 +349,9 @@ class MedicalRecordForm:
                         self.database_collection, 
                         medical_entry.model_dump(mode="json")
                     )
-                    
-                    # Show success message
-                    self.show_success_message(medical_entry)
+                
+                # Show success message (outside spinner context)
+                self.show_success_message(medical_entry)
                     
                     # Clear form by rerunning (optional)
                     # st.rerun()
