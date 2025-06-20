@@ -31,119 +31,320 @@ class MedicalRecordForm:
     def __init__(self):
         self.database_collection = DBCollectionNames(st.secrets["database_collection"]).value
     
-    def show_temporary_messages(self, medical_record):
-        # Create a placeholder for temporary messages
-        message_placeholder = st.empty()
-        message_placeholder.markdown(str(medical_record), unsafe_allow_html=True)
-        time.sleep(3)
-        message_placeholder.empty()
+    def validate_phone_number(self, phone):
+        """Validate phone number format"""
+        if not phone:
+            return False, "Phone number is required"
+        # Remove spaces, dashes, parentheses
+        cleaned_phone = ''.join(filter(str.isdigit, phone))
+        if len(cleaned_phone) < 10:
+            return False, "Phone number must be at least 10 digits"
+        return True, ""
+    
+    def validate_patient_name(self, name):
+        """Validate patient name"""
+        if not name or len(name.strip()) < 2:
+            return False, "Patient name must be at least 2 characters"
+        return True, ""
+    
+    def validate_doctor_info(self, name, location):
+        """Validate doctor information"""
+        if not name or len(name.strip()) < 2:
+            return False, "Doctor name must be at least 2 characters"
+        if not location or len(location.strip()) < 2:
+            return False, "Doctor location must be at least 2 characters"
+        return True, ""
+    
+    def show_success_message(self, medical_record):
+        """Show enhanced success message with record details"""
+        st.success("✅ Medical record successfully saved!")
+        
+        with st.expander("📋 View Submitted Record", expanded=False):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("**Patient Information:**")
+                st.write(f"• Name: {medical_record.patient.name}")
+                if medical_record.patient.phone:
+                    st.write(f"• Phone: {medical_record.patient.phone}")
+                if medical_record.patient.address:
+                    st.write(f"• Address: {medical_record.patient.address}")
+                
+                st.markdown("**Test Information:**")
+                st.write(f"• Test: {medical_record.medical_test.name}")
+                st.write(f"• Price: ₹{medical_record.medical_test.price}")
+            
+            with col2:
+                if medical_record.doctor:
+                    st.markdown("**Referring Doctor:**")
+                    st.write(f"• Name: {medical_record.doctor.name}")
+                    st.write(f"• Location: {medical_record.doctor.location}")
+                
+                st.markdown("**Payment & Other:**")
+                st.write(f"• Payment: ₹{medical_record.payment.amount}")
+                st.write(f"• Date: {medical_record.date}")
+                if medical_record.comments:
+                    st.write(f"• Comments: {medical_record.comments}")
+        
+        # Auto-hide after 5 seconds
+        time.sleep(5)
+        st.rerun()
     
     def render(self, is_authorized: bool = False):
         if not is_authorized:
+            st.warning("🔐 You need to be logged in and approved to access this form.")
             return
+        
+        # Header with improved styling
+        st.markdown("""
+        <div style="text-align: center; padding: 20px 0;">
+            <h1 style="color: #1f77b4; margin-bottom: 10px;">🏥 Medical Test Entry</h1>
+            <p style="color: #666; font-size: 16px;">Complete the form below to register a new medical test</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Initialize session state for form validation
+        if 'form_errors' not in st.session_state:
+            st.session_state.form_errors = {}
+        
+        # Form container with better styling
+        with st.container():
+            st.markdown("---")
             
-        st.header('Medical Test Entry')
-
-        ## Patient Information
-        patient_name = st.text_input(
-                            label="Patient's Name",
-                            label_visibility="hidden",
-                            placeholder="Patient's Name", 
-                            help='Enter the name of the patient')
-        patient = Patient(name=patient_name)
-        
-        phone_col1, phone_col2 = st.columns(2)
-        phone_available = phone_col1.checkbox("Patient's Phone")
-        if phone_available:
-            patient_phone = phone_col2.text_input(
-                            label="Patient's Phone",
-                            label_visibility="hidden",
-                            placeholder="Patient's Phone Number", 
-                            help='Enter the phone number of the patient')
-            patient.phone = patient_phone
-        
-        address_col1, address_col2 = st.columns(2)
-        address_available = address_col1.checkbox("Patient's Address")
-        if address_available:
-            patient_address = address_col2.text_input(
+            # PATIENT INFORMATION SECTION
+            with st.expander("👤 Patient Information", expanded=True):
+                st.markdown("**Required Information**")
+                
+                patient_name = st.text_input(
+                    label="Patient's Full Name *",
+                    placeholder="Enter patient's full name", 
+                    help="📝 Enter the complete name of the patient",
+                    key="patient_name"
+                )
+                
+                # Real-time validation for patient name
+                if patient_name:
+                    is_valid, error_msg = self.validate_patient_name(patient_name)
+                    if not is_valid:
+                        st.error(f"❌ {error_msg}")
+                    else:
+                        st.success("✅ Valid name")
+                
+                st.markdown("**Optional Information**")
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    phone_available = st.checkbox("📞 Include Phone Number", key="phone_checkbox")
+                    if phone_available:
+                        patient_phone = st.text_input(
+                            label="Patient's Phone Number",
+                            placeholder="e.g., +91 98765 43210", 
+                            help="📱 Enter 10+ digit phone number",
+                            key="patient_phone"
+                        )
+                        
+                        # Real-time phone validation
+                        if patient_phone:
+                            is_valid, error_msg = self.validate_phone_number(patient_phone)
+                            if not is_valid:
+                                st.error(f"❌ {error_msg}")
+                            else:
+                                st.success("✅ Valid phone number")
+                
+                with col2:
+                    address_available = st.checkbox("🏠 Include Address", key="address_checkbox")
+                    if address_available:
+                        patient_address = st.text_area(
                             label="Patient's Address",
-                            label_visibility="hidden",
-                            placeholder="Patient's Address", 
-                            help='Enter the address of the patient')
-            patient.address = patient_address
+                            placeholder="Enter complete address...", 
+                            help="🏠 Enter the patient's residential address",
+                            height=100,
+                            key="patient_address"
+                        )
             
-        
-        ## Referral Information
-        referring_doctor = None
-        referral_col1, referral_col2 = st.columns(2)
-        through_referral = referral_col1.checkbox("Referral")
-        if through_referral:
-            doctor_name = referral_col2.text_input(
-                            label="Doctor's Name",
-                            label_visibility="hidden",
-                            placeholder="Doctor's Name", 
-                            help='Enter the name of the doctor')
-            doctor_location = referral_col2.text_input(
-                            label="Doctor's Location",
-                            label_visibility="hidden",
-                            placeholder="Doctor's Location", 
-                            help='Enter the location of the doctor')
-            referring_doctor = Doctor(name=doctor_name, location=doctor_location)
-        
-        
-
-        TEST_PRICES = {
-            'Blood Test': 200,
-            'Urine Test': 150,
-            'X-Ray': 500,
-            'MRI': 1500
-        }
-        testinfo_col1, testinfo_col2 =  st.columns(2)        
-        test_name = testinfo_col1.selectbox(
-                            label='Test Type',
-                            options=list(TEST_PRICES.keys()),
-                            help='Select the medical test')
-        
-        
-        test_price = testinfo_col2.text_input(
-                            label='Price',
-                            disabled=True,
-                            value =f"{TEST_PRICES[test_name]} Rupees",
-                            )
-        
-        ## Payment Information
-        payment_col1, payment_col2 = st.columns(2)
-        payment_amount  = payment_col1.number_input(
-                            label='Payment',
-                            step=100,
-                            help='Enter the payment amount')
-        payment = Payment(amount=payment_amount)
-        comments = payment_col2.text_area(
-                            label='Comments',
-                            help='Enter any comments')
-
+            # REFERRAL INFORMATION SECTION
+            with st.expander("👨‍⚕️ Referral Information", expanded=False):
+                through_referral = st.checkbox("📋 Patient referred by a doctor", key="referral_checkbox")
+                
+                if through_referral:
+                    st.markdown("**Doctor Details**")
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        doctor_name = st.text_input(
+                            label="Referring Doctor's Name *",
+                            placeholder="Dr. [Name]", 
+                            help="👨‍⚕️ Enter the full name of the referring doctor",
+                            key="doctor_name"
+                        )
+                    
+                    with col2:
+                        doctor_location = st.text_input(
+                            label="Doctor's Clinic/Hospital *",
+                            placeholder="Clinic/Hospital name and location", 
+                            help="🏥 Enter the clinic or hospital details",
+                            key="doctor_location"
+                        )
+                    
+                    # Validate doctor info if provided
+                    if through_referral and doctor_name and doctor_location:
+                        is_valid, error_msg = self.validate_doctor_info(doctor_name, doctor_location)
+                        if not is_valid:
+                            st.error(f"❌ {error_msg}")
+                        else:
+                            st.success("✅ Doctor information valid")
             
-        submitted = st.button(label='Submit')
+            # TEST INFORMATION SECTION
+            with st.expander("🔬 Test Information", expanded=True):
+                TEST_PRICES = {
+                    'Blood Test': 200,
+                    'Urine Test': 150,
+                    'X-Ray': 500,
+                    'MRI': 1500,
+                    'CT Scan': 1200,
+                    'Ultrasound': 800,
+                    'ECG': 300
+                }
+                
+                col1, col2, col3 = st.columns([2, 2, 1])
+                
+                with col1:
+                    test_name = st.selectbox(
+                        label='🔬 Medical Test Type *',
+                        options=list(TEST_PRICES.keys()),
+                        help='Select the type of medical test to be performed',
+                        key="test_type"
+                    )
+                
+                with col2:
+                    test_price = st.text_input(
+                        label='💰 Test Price',
+                        disabled=True,
+                        value=f"₹{TEST_PRICES[test_name]:,}",
+                        help="Automatically calculated based on test type"
+                    )
+                
+                with col3:
+                    st.metric(
+                        label="Price",
+                        value=f"₹{TEST_PRICES[test_name]:,}",
+                        help="Test price in Indian Rupees"
+                    )
+            
+            # PAYMENT INFORMATION SECTION
+            with st.expander("💳 Payment Information", expanded=True):
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("**Payment Amount**")
+                    payment_amount = st.number_input(
+                        label='Payment Amount (₹) *',
+                        min_value=0,
+                        max_value=10000,
+                        step=50,
+                        value=0,
+                        help='💰 Enter the payment amount received',
+                        key="payment_amount"
+                    )
+                    
+                    # Show payment status
+                    if payment_amount > 0:
+                        test_price_num = TEST_PRICES[test_name]
+                        if payment_amount >= test_price_num:
+                            st.success(f"✅ Full payment received (₹{payment_amount:,})")
+                        else:
+                            remaining = test_price_num - payment_amount
+                            st.warning(f"⚠️ Partial payment. Remaining: ₹{remaining:,}")
+                    else:
+                        st.info("💡 Please enter the payment amount")
+                
+                with col2:
+                    st.markdown("**Additional Notes**")
+                    comments = st.text_area(
+                        label='Comments/Notes',
+                        placeholder="Any additional notes or comments...",
+                        help='📝 Enter any relevant comments about the test or patient',
+                        height=100,
+                        key="comments"
+                    )
+            
+            st.markdown("---")
+            
+            # FORM SUBMISSION
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col2:
+                # Validate required fields before enabling submit
+                can_submit = (
+                    patient_name and 
+                    len(patient_name.strip()) >= 2 and
+                    payment_amount > 0
+                )
+                
+                if through_referral:
+                    can_submit = can_submit and doctor_name and doctor_location
+                
+                if phone_available:
+                    can_submit = can_submit and patient_phone and self.validate_phone_number(patient_phone)[0]
+                
+                submit_button = st.button(
+                    label='💾 Submit Medical Record',
+                    disabled=not can_submit,
+                    use_container_width=True,
+                    help="Complete all required fields to enable submission" if not can_submit else "Click to save the medical record"
+                )
+            
+            # Show required fields reminder
+            if not can_submit:
+                st.info("📋 **Required fields:** Patient Name, Payment Amount" + 
+                       (" + Doctor Details (if referral selected)" if through_referral else "") +
+                       (" + Valid Phone Number (if phone selected)" if phone_available else ""))
         
-        if submitted:
-            try:
-                medical_entry = MedicalRecord(
-                    patient=patient,
-                    doctor=referring_doctor,
-                    medical_test=MedicalTest(name=test_name, price=TEST_PRICES[test_name]),
-                    payment=payment,
-                    date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    comments=comments,
-                    updated_by=st.session_state.user_role
-                )
-                db.create_doc(
-                    self.database_collection, 
-                    medical_entry.model_dump(mode="json")
-                )
-                self.show_temporary_messages(medical_entry)
+        # FORM SUBMISSION LOGIC
+        if submit_button:
+            with st.spinner('💾 Saving medical record...'):
+                try:
+                    # Create patient object
+                    patient = Patient(name=patient_name.strip())
+                    if phone_available and patient_phone:
+                        patient.phone = patient_phone
+                    if address_available and patient_address:
+                        patient.address = patient_address.strip()
+                    
+                    # Create doctor object if referral
+                    referring_doctor = None
+                    if through_referral:
+                        referring_doctor = Doctor(
+                            name=doctor_name.strip(), 
+                            location=doctor_location.strip()
+                        )
+                    
+                    # Create medical record
+                    medical_entry = MedicalRecord(
+                        patient=patient,
+                        doctor=referring_doctor,
+                        medical_test=MedicalTest(name=test_name, price=TEST_PRICES[test_name]),
+                        payment=Payment(amount=payment_amount),
+                        date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        comments=comments.strip() if comments else "",
+                        updated_by=st.session_state.user_role
+                    )
+                    
+                    # Save to database
+                    db.create_doc(
+                        self.database_collection, 
+                        medical_entry.model_dump(mode="json")
+                    )
+                    
+                    # Show success message
+                    self.show_success_message(medical_entry)
+                    
+                    # Clear form by rerunning (optional)
+                    # st.rerun()
 
-            except Exception as e:
-                st.write(e)
+                except Exception as e:
+                    st.error(f"❌ **Error saving record:** {str(e)}")
+                    st.error("Please try again or contact system administrator if the problem persists.")
+                    logger.error(f"Error saving medical record: {str(e)}")
 
 
 class OpeningScreen:
