@@ -88,6 +88,17 @@ class MedicalRecordForm:
         
         # Auto-hide after 5 seconds
         time.sleep(8)
+        # Clear all form fields after successful submission
+        form_keys_to_clear = [
+            'patient_name', 'patient_phone', 'patient_address',
+            'phone_checkbox', 'address_checkbox', 'referral_checkbox',
+            'doctor_name', 'doctor_location', 'test_type', 'payment_amount',
+            'comments'
+        ]
+        for key in form_keys_to_clear:
+            if key in st.session_state:
+                del st.session_state[key]
+        
         # Reset processing state before rerun
         st.session_state.processing_submission = False
         st.rerun()
