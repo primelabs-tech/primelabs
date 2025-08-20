@@ -1,10 +1,12 @@
 import streamlit as st
 # from firestore_crud import FirestoreCRUD - removed to break circular import
 # from user_authentication import UserAuthentication - removed to break circular import
+import base64
 from fpdf import FPDF
 import io
 from datetime import datetime
 from data_models import MedicalRecord
+import os
 
 def get_firebase_auth_config():
     return  {
@@ -86,63 +88,81 @@ def generate_medical_record_pdf(record: MedicalRecord) -> bytes:
     """
     class PDF(FPDF):
         def header(self):
-            # Add logo if needed
+            # Add logo from assets
+            logo_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'assets', 'primelabs_symbol.png')
+            # Add logo with proper sizing (adjust w and h as needed based on the actual image)
+            self.image(logo_path, x=20, y=8, w=20)
+            
+            # Add title
             self.set_font('Helvetica', 'B', 20)
-            self.cell(0, 10, 'PrimeLabs Medical Record', 0, 1, 'C')
-            self.ln(10)
+            self.cell(25)  # Move past the logo
+            self.cell(0, 15, 'PrimeLabs Medical Record', 0, 1, 'C')
+            
+            # Add horizontal line
+            self.line(20, 30, 190, 30)
+            self.ln(15)  # Space after header
             
         def footer(self):
-            self.set_y(-15)
+            self.set_y(-20)  # Move up slightly
             self.set_font('Helvetica', 'I', 8)
             self.cell(0, 10, f'Page {self.page_no()}/{{nb}}', 0, 0, 'C')
 
     # Create PDF object
     pdf = PDF()
-    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.set_auto_page_break(auto=True, margin=20)  # Increased margin
+    pdf.set_margins(left=20, top=20, right=20)  # Consistent margins
     
     pdf.alias_nb_pages()
     pdf.add_page()
     
-    # Set font
-    pdf.set_font('Helvetica', '', 12)
-    
-    # Add content
-    pdf.set_font('Helvetica', 'B', 14)
-    pdf.cell(0, 10, 'Patient Information', 0, 1)
-    pdf.set_font('Helvetica', '', 12)
-    pdf.cell(0, 10, f'Name: {record.patient.name}', 0, 1)
-    if record.patient.phone:
-        pdf.cell(0, 10, f'Phone: {record.patient.phone}', 0, 1)
-    if record.patient.address:
-        pdf.cell(0, 10, f'Address: {record.patient.address}', 0, 1)
-    
-    pdf.ln(5)
-    
-    if record.doctor:
+    # Content with improved spacing
+    def add_section(title, content_list):
         pdf.set_font('Helvetica', 'B', 14)
-        pdf.cell(0, 10, 'Doctor Information', 0, 1)
+        pdf.cell(0, 10, title, 0, 1)
         pdf.set_font('Helvetica', '', 12)
-        pdf.cell(0, 10, f'Name: Dr. {record.doctor.name}', 0, 1)
-        pdf.cell(0, 10, f'Location: {record.doctor.location}', 0, 1)
-        pdf.ln(5)
+        for line in content_list:
+            pdf.cell(0, 8, line, 0, 1)  # Reduced line height
+        pdf.ln(5)  # Space between sections
     
-    pdf.set_font('Helvetica', 'B', 14)
-    pdf.cell(0, 10, 'Medical Test Details', 0, 1)
-    pdf.set_font('Helvetica', '', 12)
-    pdf.cell(0, 10, f'Test: {record.medical_test.name}', 0, 1)
-    pdf.cell(0, 10, f'Amount Paid: Rs. {record.payment.amount}', 0, 1)
+    # Patient Information Section
+    patient_info = [
+        f'Name: {record.patient.name}'
+    ]
+    if record.patient.phone:
+        patient_info.append(f'Phone: {record.patient.phone}')
+    if record.patient.address:
+        patient_info.append(f'Address: {record.patient.address}')
+    add_section('Patient Information', patient_info)
     
+    # Doctor Information Section
+    if record.doctor:
+        doctor_info = [
+            f'Name: Dr. {record.doctor.name}',
+            f'Location: {record.doctor.location}'
+        ]
+        add_section('Doctor Information', doctor_info)
+    
+    # Medical Test Section
+    test_info = [
+        f'Test: {record.medical_test.name}',
+        f'Amount Paid: Rs. {record.payment.amount}'
+    ]
+    add_section('Medical Test Details', test_info)
+    
+    # Comments Section
     if record.comments:
-        pdf.ln(5)
         pdf.set_font('Helvetica', 'B', 14)
         pdf.cell(0, 10, 'Additional Comments', 0, 1)
         pdf.set_font('Helvetica', '', 12)
-        pdf.multi_cell(0, 10, record.comments)
+        # Handle multi-line comments with proper wrapping
+        pdf.multi_cell(0, 8, record.comments)
+        pdf.ln(5)
     
+    # Footer Information
     pdf.ln(5)
     pdf.set_font('Helvetica', 'I', 10)
-    pdf.cell(0, 10, f'Record Date: {record.date}', 0, 1)
-    pdf.cell(0, 10, f'Updated by: {record.updated_by_email}', 0, 1)
+    pdf.cell(0, 8, f'Record Date: {record.date}', 0, 1)
+    pdf.cell(0, 8, f'Updated by: {record.updated_by_email}', 0, 1)
     
     # Return PDF as bytes
     return bytes(pdf.output())
