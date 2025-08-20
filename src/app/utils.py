@@ -88,29 +88,39 @@ def generate_medical_record_pdf(record: MedicalRecord) -> bytes:
     """
     class PDF(FPDF):
         def header(self):
+            # Set up initial position
+            initial_y = 8
+            
             # Add logo from assets
             logo_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'assets', 'primelabs_symbol.png')
-            # Add logo with proper sizing (adjust w and h as needed based on the actual image)
-            self.image(logo_path, x=20, y=8, w=20)
+            # Add logo with proper sizing and centered vertically with the title
+            logo_width = 15  # Smaller, more professional size
+            self.image(logo_path, x=40, y=initial_y, w=logo_width)
             
-            # Add title
+            # Add title - positioned right after the logo
             self.set_font('Helvetica', 'B', 20)
-            self.cell(25)  # Move past the logo
-            self.cell(0, 15, 'PrimeLabs Medical Record', 0, 1, 'C')
+            title = 'PrimeLabs Medical Record'
+            # Calculate title width to center it properly
+            title_width = self.get_string_width(title)
+            # Position title after logo with some padding
+            self.set_xy(60, initial_y)
+            self.cell(title_width, 10, title, 0, 0, 'L')
             
-            # Add horizontal line
-            self.line(20, 30, 190, 30)
-            self.ln(15)  # Space after header
+            # Add horizontal line with some space below the header
+            self.set_y(initial_y + 15)
+            self.line(20, self.get_y(), 190, self.get_y())
+            self.ln(20)  # Space after line
             
         def footer(self):
-            self.set_y(-20)  # Move up slightly
+            self.set_y(-20)
             self.set_font('Helvetica', 'I', 8)
             self.cell(0, 10, f'Page {self.page_no()}/{{nb}}', 0, 0, 'C')
 
     # Create PDF object
     pdf = PDF()
-    pdf.set_auto_page_break(auto=True, margin=20)  # Increased margin
-    pdf.set_margins(left=20, top=20, right=20)  # Consistent margins
+    # Set margins - reduced top margin to accommodate header
+    pdf.set_margins(left=20, top=35, right=20)
+    pdf.set_auto_page_break(auto=True, margin=20)
     
     pdf.alias_nb_pages()
     pdf.add_page()
