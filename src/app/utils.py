@@ -1,6 +1,10 @@
 import streamlit as st
 # from firestore_crud import FirestoreCRUD - removed to break circular import
 # from user_authentication import UserAuthentication - removed to break circular import
+from fpdf import FPDF
+import io
+from datetime import datetime
+from data_models import MedicalRecord
 
 def get_firebase_auth_config():
     return  {
@@ -69,4 +73,77 @@ def show_pending_approval_page():
     st.markdown("""
     > 💡 **Tip:** You can refresh this page periodically to check if your account has been approved.
     """)
+
+
+def generate_medical_record_pdf(record: MedicalRecord) -> bytes:
+    """Generate a PDF document from a medical record.
+    
+    Args:
+        record (MedicalRecord): The medical record to convert to PDF
+        
+    Returns:
+        bytes: The PDF document as bytes
+    """
+    class PDF(FPDF):
+        def header(self):
+            # Add logo if needed
+            self.set_font('Helvetica', 'B', 20)
+            self.cell(0, 10, 'PrimeLabs Medical Record', 0, 1, 'C')
+            self.ln(10)
+            
+        def footer(self):
+            self.set_y(-15)
+            self.set_font('Helvetica', 'I', 8)
+            self.cell(0, 10, f'Page {self.page_no()}/{{nb}}', 0, 0, 'C')
+
+    # Create PDF object
+    pdf = PDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    
+    pdf.alias_nb_pages()
+    pdf.add_page()
+    
+    # Set font
+    pdf.set_font('Helvetica', '', 12)
+    
+    # Add content
+    pdf.set_font('Helvetica', 'B', 14)
+    pdf.cell(0, 10, 'Patient Information', 0, 1)
+    pdf.set_font('Helvetica', '', 12)
+    pdf.cell(0, 10, f'Name: {record.patient.name}', 0, 1)
+    if record.patient.phone:
+        pdf.cell(0, 10, f'Phone: {record.patient.phone}', 0, 1)
+    if record.patient.address:
+        pdf.cell(0, 10, f'Address: {record.patient.address}', 0, 1)
+    
+    pdf.ln(5)
+    
+    if record.doctor:
+        pdf.set_font('Helvetica', 'B', 14)
+        pdf.cell(0, 10, 'Doctor Information', 0, 1)
+        pdf.set_font('Helvetica', '', 12)
+        pdf.cell(0, 10, f'Name: Dr. {record.doctor.name}', 0, 1)
+        pdf.cell(0, 10, f'Location: {record.doctor.location}', 0, 1)
+        pdf.ln(5)
+    
+    pdf.set_font('Helvetica', 'B', 14)
+    pdf.cell(0, 10, 'Medical Test Details', 0, 1)
+    pdf.set_font('Helvetica', '', 12)
+    pdf.cell(0, 10, f'Test: {record.medical_test.name}', 0, 1)
+    pdf.cell(0, 10, f'Amount Paid: Rs. {record.payment.amount}', 0, 1)
+    
+    if record.comments:
+        pdf.ln(5)
+        pdf.set_font('Helvetica', 'B', 14)
+        pdf.cell(0, 10, 'Additional Comments', 0, 1)
+        pdf.set_font('Helvetica', '', 12)
+        pdf.multi_cell(0, 10, record.comments)
+    
+    pdf.ln(5)
+    pdf.set_font('Helvetica', 'I', 10)
+    pdf.cell(0, 10, f'Record Date: {record.date}', 0, 1)
+    pdf.cell(0, 10, f'Updated by: {record.updated_by_email}', 0, 1)
+    
+    # Return PDF as bytes
+    return bytes(pdf.output())
 
