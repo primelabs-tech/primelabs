@@ -85,6 +85,25 @@ class MedicalRecordForm:
                 st.write(f"• Date: {medical_record.date}")
                 if medical_record.comments:
                     st.write(f"• Comments: {medical_record.comments}")
+        
+        # Add centered PDF download button
+        from utils import generate_medical_record_pdf
+        
+        pdf_bytes = generate_medical_record_pdf(medical_record)
+        filename = f"medical_record_{medical_record.patient.name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        
+        left_col, center_col, right_col = st.columns([1, 2, 1])
+        with center_col:
+            st.download_button(
+                label="⬇️ Download PDF",
+                data=pdf_bytes,
+                file_name=filename,
+                mime="application/pdf",
+                help="Download the medical record as a PDF file",
+                use_container_width=True
+            )
+        
+        st.markdown("---")
     
     def clear_form_fields(self):
         """Clear all form fields from session state"""
