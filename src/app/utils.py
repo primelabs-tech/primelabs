@@ -94,20 +94,20 @@ def generate_medical_record_pdf(record: MedicalRecord) -> bytes:
             # Add logo from assets
             logo_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'assets', 'primelabs_symbol.png')
             # Add logo with proper sizing and centered vertically with the title
-            logo_width = 15  # Smaller, more professional size
-            self.image(logo_path, x=40, y=initial_y, w=logo_width)
+            logo_width = 25  # Increased size
+            self.image(logo_path, x=30, y=initial_y, w=logo_width)
             
             # Add title - positioned right after the logo
-            self.set_font('Helvetica', 'B', 20)
-            title = 'PrimeLabs Medical Record'
+            self.set_font('Helvetica', 'B', 24)  # Increased font size
+            title = 'Prime Healthcare Diagnostic'
             # Calculate title width to center it properly
             title_width = self.get_string_width(title)
             # Position title after logo with some padding
-            self.set_xy(60, initial_y)
+            self.set_xy(60, initial_y + 5)  # Adjusted Y position for vertical centering with larger logo
             self.cell(title_width, 10, title, 0, 0, 'L')
             
             # Add horizontal line with some space below the header
-            self.set_y(initial_y + 15)
+            self.set_y(initial_y + 25)  # Adjusted for larger elements
             self.line(20, self.get_y(), 190, self.get_y())
             self.ln(20)  # Space after line
             
@@ -118,8 +118,8 @@ def generate_medical_record_pdf(record: MedicalRecord) -> bytes:
 
     # Create PDF object
     pdf = PDF()
-    # Set margins - reduced top margin to accommodate header
-    pdf.set_margins(left=20, top=35, right=20)
+    # Set margins - adjusted top margin for larger header
+    pdf.set_margins(left=20, top=45, right=20)
     pdf.set_auto_page_break(auto=True, margin=20)
     
     pdf.alias_nb_pages()
