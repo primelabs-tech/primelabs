@@ -89,14 +89,16 @@ class MedicalRecord(DatabaseRecord):
 
 
 class ExpenseType(StrEnum):
+    RENT = "Rent"
+    ELECTRICITY = "Electricity"
+    INTERNET = "Internet"
+    OTHER = "Other"
     DOCTOR_FEES = "Doctor Fees"
     STAFF_EXPENSE = "Staff Expense"
     EQUIPMENT = "Equipment"
-    RENT = "Rent"
     SALARY = "Salary"
     STATIONARY = "Stationary"
     CHAI_NASHTA = "Chai Nashta"
-    MISCELLANEOUS = "Miscellaneous"
 
 
 class ExpenseRecord(DatabaseRecord):
