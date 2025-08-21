@@ -969,24 +969,22 @@ class OpeningScreen:
         self.opening_screen()
         return
 
-    def show_admin_menu(self):
-        """Show admin menu in sidebar if user is project owner"""
-        if self.user_auth.check_authentication() and is_project_owner(st.session_state.user_email):
-            st.sidebar.markdown("---")
-            st.sidebar.subheader("🔧 Admin Panel")
-        
-        if st.sidebar.button("Manage Users"):
-            st.session_state.show_admin = True
-        
-        if st.sidebar.button("Hide Admin Panel"):
-            st.session_state.show_admin = False
+
 
     def show_admin_user_management(self):
         """Admin interface for managing user roles - only accessible by project owner"""
         if self.user_auth.is_current_user_owner() != AuthorizationStatus.OWNER:
             return
         
-        st.header("User Management (Admin Only)")
+        # Header with improved styling
+        st.markdown("""
+        <div style="text-align: center; padding: 20px 0;">
+            <h1 style="color: #e74c3c; margin-bottom: 10px;">🔧 Admin Dashboard</h1>
+            <p style="color: #666; font-size: 16px;">Manage user accounts and permissions</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("---")
         
         try:
             users = self.db.get_docs(USER_DB_COLLECTION)
@@ -995,99 +993,129 @@ class OpeningScreen:
                 st.info("No users found in the system.")
                 return
             
-            st.subheader("Manage User Roles")
+            # Display summary stats
+            total_users = len(users)
+            active_users = len([u for u in users if u.get('status') == 'active'])
+            pending_users = len([u for u in users if u.get('status') == 'pending_approval'])
             
-            # Display users in a table format
-            for i, user_doc in enumerate(users):
-                user_data = user_doc
-                email = user_data.get('email', 'Unknown')
-                current_role = user_data.get('role', UserRole.EMPLOYEE)
-                status = user_data.get('status', AuthorizationStatus.PENDING_APPROVAL)
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Total Users", total_users)
+            with col2:
+                st.metric("Active Users", active_users)
+            with col3:
+                st.metric("Pending Approval", pending_users)
+            
+            st.markdown("---")
+            
+            # Tabs for different sections
+            tab1, tab2 = st.tabs(["👥 Manage User Roles", "⏳ Pending Approvals"])
+            
+            with tab1:
+                st.subheader("User Role Management")
                 
-                # Skip the owner's own account
-                if is_project_owner(email):
-                    continue
+                # Display users in a table format
+                for i, user_doc in enumerate(users):
+                    user_data = user_doc
+                    email = user_data.get('email', 'Unknown')
+                    current_role = user_data.get('role', UserRole.EMPLOYEE)
+                    status = user_data.get('status', AuthorizationStatus.PENDING_APPROVAL)
+                    
+                    # Skip the owner's own account
+                    if is_project_owner(email):
+                        continue
+                    
+                    with st.container():
+                        col1, col2, col3, col4 = st.columns([3, 2, 2, 2])
+                        
+                        with col1:
+                            st.text(f"📧 {email}")
+                        
+                        with col2:
+                            status_color = "🟢" if status == "active" else "🟡"
+                            st.text(f"{status_color} {status}")
+                        
+                        with col3:
+                            new_role = st.selectbox(
+                                "Role",
+                                options=list(UserRole),
+                                index=list(UserRole).index(current_role),
+                                key=f"role_{i}"
+                            )
+                        
+                        with col4:
+                            if st.button("Update", key=f"update_{i}"):
+                                try:
+                                    # We already have the user document, no need to search again
+                                    doc_id = user_data.get('id') # Assuming the doc has an id field
+                                    if doc_id:
+                                        # Update user role and status
+                                        update_data = {
+                                            "role": new_role,
+                                            "status": "active",
+                                            "updated_by": st.session_state.user_email,
+                                            "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                        }
+                                        
+                                        # Update the document directly using the ID we already have
+                                        self.db.update_doc(USER_DB_COLLECTION, doc_id, update_data)
+                                        
+                                        st.success(f"Updated {email} to {new_role}")
+                                        st.rerun()
+                                    else:
+                                        st.error("User document ID not found")
+                                except Exception as e:
+                                    st.error(f"Error updating user: {str(e)}")
+                        
+                        st.divider()
+            
+            with tab2:
+                st.subheader("Pending User Approvals")
                 
-                with st.container():
-                    col1, col2, col3, col4 = st.columns([3, 2, 2, 2])
+                # Pending approvals section
+                pending_users = [user for user in users if user.get('status') == 'pending_approval']
+                
+                if not pending_users:
+                    st.info("✅ No pending approvals found.")
+                    return
+                
+                for user_data in pending_users:
+                    email = user_data.get('email', 'Unknown')
+                    if is_project_owner(email):
+                        continue
                     
-                    with col1:
-                        st.text(f"📧 {email}")
-                    
-                    with col2:
-                        st.text(f"Status: {status}")
-                    
-                    with col3:
-                        new_role = st.selectbox(
-                            "Role",
-                            options=list(UserRole),
-                            index=list(UserRole).index(current_role),
-                            key=f"role_{i}"
-                        )
-                    
-                    with col4:
-                        if st.button("Update", key=f"update_{i}"):
-                            try:
-                                # We already have the user document, no need to search again
-                                doc_id = user_data.get('id') # Assuming the doc has an id field
-                                if doc_id:
-                                    # Update user role and status
+                    with st.container():
+                        col1, col2, col3 = st.columns([4, 2, 2])
+                        with col1:
+                            st.text(f"📧 {email}")
+                            created_date = user_data.get('created_at', 'Unknown')
+                            st.caption(f"Registered: {created_date}")
+                        
+                        with col2:
+                            st.write("⏳ Awaiting approval")
+                        
+                        with col3:
+                            if st.button("✅ Approve", key=f"approve_{email}"):
+                                try:
+                                    # Update status to active using the user data we already have
+                                    doc_id = user_data.get('id')
+                                    if not doc_id:
+                                        st.error("User document ID not found")
+                                        return
+                                    
                                     update_data = {
-                                        "role": new_role,
                                         "status": "active",
-                                        "updated_by": st.session_state.user_email,
-                                        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                        "approved_by": st.session_state.user_email,
+                                        "approved_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                                     }
+                                    self.db.update_doc("users", doc_id, update_data)
                                     
-                                    # Update the document directly using the ID we already have
-                                    self.db.update_doc(USER_DB_COLLECTION, doc_id, update_data)
-                                    
-                                    st.success(f"Updated {email} to {new_role}")
+                                    st.success(f"✅ Approved {email}")
                                     st.rerun()
-                                else:
-                                    st.error("User document ID not found")
-                            except Exception as e:
-                                st.error(f"Error updating user: {str(e)}")
-                    
-                    st.divider()
-            
-            # Pending approvals section
-            st.subheader("Pending Approvals")
-            pending_users = [user for user in users if user.get('status') == 'pending_approval']
-            
-            if not pending_users:
-                st.info("No pending approvals found.")
-                return
-            
-            for user_data in pending_users:
-                email = user_data.get('email', 'Unknown')
-                if is_project_owner(email):
-                    continue
-                
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    st.text(f"📧 {email} - Pending approval")
-                with col2:
-                    if st.button("Approve", key=f"approve_{email}"):
-                        try:
-                            # Update status to active using the user data we already have
-                            doc_id = user_data.get('id')
-                            if not doc_id:
-                                st.error("User document ID not found")
-                                return
-                            
-                            update_data = {
-                                "status": "active",
-                                "approved_by": st.session_state.user_email,
-                                "approved_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                            }
-                            self.db.update_doc("users", doc_id, update_data)
-                            
-                            st.success(f"Approved {email}")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Error approving user: {str(e)}")
-          
+                                except Exception as e:
+                                    st.error(f"Error approving user: {str(e)}")
+                        
+                        st.divider()
                 
         except Exception as e:
             st.error(f"Error loading user management: {str(e)}")
@@ -1126,12 +1154,15 @@ class PrimeLabsUI:
                 if 'current_page' not in st.session_state:
                     st.session_state.current_page = "Medical Records"
                 
-                # Page selection
+                # Page selection - include Admin for project owners
                 page_options = ["Medical Records", "Expenses"]
+                if is_project_owner(st.session_state.user_email):
+                    page_options.append("Admin")
+                
                 selected_page = st.radio(
                     "Select Page:",
                     page_options,
-                    index=page_options.index(st.session_state.current_page),
+                    index=page_options.index(st.session_state.current_page) if st.session_state.current_page in page_options else 0,
                     key="page_selector"
                 )
                 
@@ -1150,7 +1181,9 @@ class PrimeLabsUI:
                         'expense_type', 'expense_amount', 'expense_description',
                         'expense_form_errors', 'expense_processing_submission',
                         'expense_show_success', 'expense_last_record', 'show_recent_expenses',
-                        'show_all_expenses'
+                        'show_all_expenses',
+                        # Admin form keys
+                        'show_admin', 'admin_user_filter'
                     ]
                     for key in form_keys_to_clear:
                         if key in st.session_state:
@@ -1163,8 +1196,8 @@ class PrimeLabsUI:
                     self.user_auth.logout()
                     st.rerun()
                 
-                # Show admin menu if user is project owner
-                self.opening_screen.show_admin_menu()
+                # Remove the old admin menu call
+                # self.opening_screen.show_admin_menu()
             else:
                 self.opening_screen.opening_screen()
             
@@ -1172,24 +1205,28 @@ class PrimeLabsUI:
             st.session_state.times_loaded += 1
             st.write(f"Times loaded: {st.session_state.times_loaded}")
             
-        # Show admin panel if requested
-        if st.session_state.get('show_admin', False):
-            self.opening_screen.show_admin_user_management()
-        else:
-            authorization = self.user_auth.require_authorization()
-            is_authorized = authorization == AuthorizationStatus.APPROVED
-            
-            # Render the appropriate page based on selection
-            if is_authenticated and is_authorized:
-                current_page = st.session_state.get('current_page', 'Medical Records')
-                
-                if current_page == "Medical Records":
-                    MedicalRecordForm().render(is_authorized)
-                elif current_page == "Expenses":
-                    ExpenseForm().render(is_authorized)
-            else:
-                # Show medical records form by default for unauthorized users (they'll see the warning)
+        # Render pages based on navigation selection
+        authorization = self.user_auth.require_authorization()
+        is_authorized = authorization == AuthorizationStatus.APPROVED
+        
+        # Get current page selection
+        current_page = st.session_state.get('current_page', 'Medical Records')
+        
+        # Render the appropriate page based on selection
+        if is_authenticated and is_authorized:
+            if current_page == "Medical Records":
                 MedicalRecordForm().render(is_authorized)
+            elif current_page == "Expenses":
+                ExpenseForm().render(is_authorized)
+            elif current_page == "Admin":
+                # Only show admin page to project owners
+                if is_project_owner(st.session_state.user_email):
+                    self.opening_screen.show_admin_user_management()
+                else:
+                    st.error("❌ Access denied. Admin page is only accessible to project owners.")
+        else:
+            # Show medical records form by default for unauthorized users (they'll see the warning)
+            MedicalRecordForm().render(is_authorized)
 
 
 if __name__ == '__main__':
