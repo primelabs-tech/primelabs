@@ -1020,10 +1020,36 @@ class OpeningScreen:
     
     def show_pending_approval_screen(self):
         """Show pending approval screen for users waiting for approval"""
-        # html = get_pending_approval_html()
-        # st.markdown(html, unsafe_allow_html=True)
         from utils import show_pending_approval_page
         show_pending_approval_page()
+        
+        # Add logout and refresh buttons
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col1:
+            if st.button("🔄 Refresh Status", use_container_width=True):
+                st.rerun()
+        with col3:
+            if st.button("🚪 Logout", use_container_width=True):
+                self.user_auth.logout()
+                st.rerun()
+    
+    def show_rejected_screen(self):
+        """Show rejected screen for users whose access has been revoked"""
+        st.markdown("### 🚫 Access Denied")
+        
+        st.error("""
+        **Your account access has been revoked**
+        
+        Your account has been rejected or your access has been revoked by an administrator.
+        You cannot access the PrimeLabs system at this time.
+        """)
+        
+        st.markdown("#### What can you do?")
+        st.markdown("""
+        - Contact the system administrator to understand why your access was revoked
+        - Request reinstatement if you believe this was done in error
+        - If you need immediate assistance, reach out to: `admin@primelabs.com`
+        """)
         
         # Add logout and refresh buttons
         col1, col2, col3 = st.columns([1, 1, 1])
@@ -1069,18 +1095,22 @@ class OpeningScreen:
                 self.show_error_message(error_message, "Login")
  
     def register_screen(self):
-        email = st.text_input("Email")
+        name = st.text_input("Full Name", placeholder="Enter your full name")
+        email = st.text_input("Email", placeholder="Enter your email address")
         password = st.text_input("Password", type="password")
         confirm_password = st.text_input("Confirm Password", type="password")
 
         if st.button("Register"):
-            if not all([email, password, confirm_password]):
-                st.show_error_message("MISSING_FIELDS")
+            if not all([name, email, password, confirm_password]):
+                self.show_error_message("MISSING_FIELDS")
+                return
+            if len(name.strip()) < 2:
+                st.error("Name must be at least 2 characters")
                 return
             if password != confirm_password:
-                st.show_error_message("PASSWORD_MISMATCH")
+                self.show_error_message("PASSWORD_MISMATCH")
                 return 
-            is_registered, error_message = self.user_auth.register(email, password)
+            is_registered, error_message = self.user_auth.register(email, password, name.strip())
             if is_registered:
                 st.success("Registration successful!")
             else:
@@ -1104,35 +1134,39 @@ class OpeningScreen:
     def show_error_message(self, 
                            error_message: str,
                            operation: str = "Operation"):
-        error_message = ""
-        if "MISSING_FIELDS" in error_message:
-            error_message = "Please fill in all fields"
-        elif "PASSWORD_MISMATCH" in error_message:
-            error_message = "Passwords do not match"
-        elif "MISSING_EMAIL" in error_message:
-            error_message = "Please enter your email address"
-        elif "EMAIL_NOT_FOUND" in error_message:
-            error_message = "No account found with this email address"
-        elif "EMAIL_EXISTS" in error_message:
-            error_message = "An account with this email already exists"
-        elif "WEAK_PASSWORD" in error_message:
-            error_message = "Password should be at least 6 characters"
-        elif "INVALID_EMAIL" in error_message:
-            error_message = "Invalid email format"
-        elif "EMAIL_NOT_FOUND" in error_message:
-            error_message = "No account found with this email"
-        elif "INVALID_PASSWORD" in error_message or "INVALID_LOGIN_CREDENTIALS" in error_message:
-            error_message = "Incorrect password or invalid login credentials"
-        elif "TOO_MANY_ATTEMPTS_TRY_LATER" in error_message:
-            error_message = "Too many failed attempts. Please try again later"
-        elif "USER_DISABLED" in error_message:
-            error_message = "This user account has been disabled"
-        elif "WEAK_PASSWORD" in error_message:
-            error_message = "Password is too weak. Please choose a stronger password"
-        else:
-            error_message = f"{operation} failed"            
+        display_message = ""
         
-        st.error(error_message)
+        if "MISSING_FIELDS" in error_message:
+            display_message = "Please fill in all fields"
+        elif "PASSWORD_MISMATCH" in error_message:
+            display_message = "Passwords do not match"
+        elif "MISSING_EMAIL" in error_message:
+            display_message = "Please enter your email address"
+        elif "EMAIL_NOT_FOUND" in error_message:
+            display_message = "No account found with this email address"
+        elif "EMAIL_EXISTS" in error_message:
+            display_message = "An account with this email already exists. Please use a different email or try logging in."
+        elif "WEAK_PASSWORD" in error_message:
+            display_message = "Password is too weak. Please use at least 6 characters with a mix of letters and numbers."
+        elif "INVALID_EMAIL" in error_message:
+            display_message = "Invalid email format. Please enter a valid email address (e.g., user@example.com)"
+        elif "INVALID_PASSWORD" in error_message or "INVALID_LOGIN_CREDENTIALS" in error_message:
+            display_message = "Incorrect password or invalid login credentials"
+        elif "TOO_MANY_ATTEMPTS_TRY_LATER" in error_message:
+            display_message = "Too many failed attempts. Please try again later."
+        elif "USER_DISABLED" in error_message:
+            display_message = "This user account has been disabled. Please contact the administrator."
+        elif "OPERATION_NOT_ALLOWED" in error_message:
+            display_message = "Registration is currently disabled. Please contact the administrator."
+        elif "NETWORK" in error_message.upper() or "CONNECTION" in error_message.upper():
+            display_message = "Network error. Please check your internet connection and try again."
+        elif "TIMEOUT" in error_message.upper():
+            display_message = "Request timed out. Please try again."
+        else:
+            # Show a user-friendly message with the actual error for debugging
+            display_message = f"{operation} failed. Please try again or contact support if the issue persists."
+        
+        st.error(f"❌ {display_message}")
 
     def token_expired_screen(self):
         """Show token expired message"""
@@ -1143,8 +1177,13 @@ class OpeningScreen:
 
 
     def show_admin_user_management(self):
-        """Admin interface for managing user roles - only accessible by project owner"""
-        if self.user_auth.is_current_user_owner() != AuthorizationStatus.OWNER:
+        """Admin interface for managing user roles and status - accessible only by Admin role users"""
+        # Check if user has Admin role or is project owner
+        is_owner = self.user_auth.is_current_user_owner() == AuthorizationStatus.OWNER
+        is_admin = st.session_state.user_role == UserRole.ADMIN.value
+        
+        if not (is_owner or is_admin):
+            st.error("❌ Access denied. Only users with Admin role can manage user status.")
             return
         
         # Header with improved styling
@@ -1166,72 +1205,101 @@ class OpeningScreen:
             
             # Display summary stats
             total_users = len(users)
-            active_users = len([u for u in users if u.get('status') == 'active'])
+            approved_users = len([u for u in users if u.get('status') == 'approved'])
             pending_users = len([u for u in users if u.get('status') == 'pending_approval'])
+            rejected_users = len([u for u in users if u.get('status') == 'rejected'])
             
-            col1, col2, col3 = st.columns(3)
+            col1, col2, col3, col4 = st.columns(4)
             with col1:
                 st.metric("Total Users", total_users)
             with col2:
-                st.metric("Active Users", active_users)
+                st.metric("Approved", approved_users)
             with col3:
-                st.metric("Pending Approval", pending_users)
+                st.metric("Pending", pending_users)
+            with col4:
+                st.metric("Rejected", rejected_users)
             
             st.markdown("---")
             
             # Tabs for different sections
-            tab1, tab2 = st.tabs(["👥 Manage User Roles", "⏳ Pending Approvals"])
+            tab1, tab2, tab3 = st.tabs(["👥 Manage Users", "⏳ Pending Approvals", "🚫 Rejected Users"])
             
             with tab1:
-                st.subheader("User Role Management")
+                st.subheader("User Role & Status Management")
+                st.info("💡 Users with 'approved' status can access the app. Change status to 'rejected' or 'pending_approval' to revoke access.")
                 
                 # Display users in a table format
                 for i, user_doc in enumerate(users):
                     user_data = user_doc
                     email = user_data.get('email', 'Unknown')
+                    name = user_data.get('name', '')
                     current_role = user_data.get('role', UserRole.EMPLOYEE)
-                    status = user_data.get('status', AuthorizationStatus.PENDING_APPROVAL)
+                    status = user_data.get('status', 'pending_approval')
                     
                     # Skip the owner's own account
                     if is_project_owner(email):
                         continue
                     
                     with st.container():
-                        col1, col2, col3, col4 = st.columns([3, 2, 2, 2])
+                        col1, col2, col3, col4, col5 = st.columns([3, 2, 2, 2, 1])
                         
                         with col1:
-                            st.text(f"📧 {email}")
+                            if name:
+                                st.text(f"👤 {name}")
+                                st.caption(f"📧 {email}")
+                            else:
+                                st.text(f"📧 {email}")
                         
                         with col2:
-                            status_color = "🟢" if status == "active" else "🟡"
-                            st.text(f"{status_color} {status}")
+                            if status == "approved":
+                                status_icon = "🟢"
+                            elif status == "pending_approval":
+                                status_icon = "🟡"
+                            else:
+                                status_icon = "🔴"
+                            st.text(f"{status_icon} {status}")
                         
                         with col3:
-                            new_role = st.selectbox(
-                                "Role",
-                                options=list(UserRole),
-                                index=list(UserRole).index(current_role),
-                                key=f"role_{i}"
-                            )
+                            # Only owners can change roles
+                            if is_owner:
+                                new_role = st.selectbox(
+                                    "Role",
+                                    options=list(UserRole),
+                                    index=list(UserRole).index(current_role) if current_role in list(UserRole) else 0,
+                                    key=f"role_{i}"
+                                )
+                            else:
+                                st.text(f"Role: {current_role}")
+                                new_role = current_role
                         
                         with col4:
-                            if st.button("Update", key=f"update_{i}"):
+                            # Status options for changing user access
+                            status_options = ["approved", "pending_approval", "rejected"]
+                            current_status_index = status_options.index(status) if status in status_options else 1
+                            new_status = st.selectbox(
+                                "Status",
+                                options=status_options,
+                                index=current_status_index,
+                                key=f"status_{i}"
+                            )
+                        
+                        with col5:
+                            if st.button("💾", key=f"update_{i}", help="Save changes"):
                                 try:
-                                    # We already have the user document, no need to search again
-                                    doc_id = user_data.get('id') # Assuming the doc has an id field
+                                    doc_id = user_data.get('id')
                                     if doc_id:
-                                        # Update user role and status
                                         update_data = {
-                                            "role": new_role,
-                                            "status": "active",
+                                            "status": new_status,
                                             "updated_by": st.session_state.user_email,
                                             "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                                         }
+                                        # Only update role if owner
+                                        if is_owner:
+                                            update_data["role"] = new_role
                                         
-                                        # Update the document directly using the ID we already have
                                         self.db.update_doc(USER_DB_COLLECTION, doc_id, update_data)
                                         
-                                        st.success(f"Updated {email} to {new_role}")
+                                        st.success(f"Updated {email}")
                                         st.rerun()
                                     else:
                                         st.error("User document ID not found")
@@ -1244,49 +1312,122 @@ class OpeningScreen:
                 st.subheader("Pending User Approvals")
                 
                 # Pending approvals section
-                pending_users = [user for user in users if user.get('status') == 'pending_approval']
+                pending_users_list = [user for user in users if user.get('status') == 'pending_approval']
                 
-                if not pending_users:
+                if not pending_users_list:
                     st.info("✅ No pending approvals found.")
-                    return
+                else:
+                    for user_data in pending_users_list:
+                        email = user_data.get('email', 'Unknown')
+                        name = user_data.get('name', '')
+                        if is_project_owner(email):
+                            continue
+                        
+                        with st.container():
+                            col1, col2, col3, col4 = st.columns([4, 2, 1, 1])
+                            with col1:
+                                if name:
+                                    st.text(f"👤 {name}")
+                                    st.caption(f"📧 {email}")
+                                else:
+                                    st.text(f"📧 {email}")
+                                created_date = user_data.get('created_at', 'Unknown')
+                                st.caption(f"Registered: {created_date}")
+                            
+                            with col2:
+                                st.write("⏳ Awaiting approval")
+                            
+                            with col3:
+                                if st.button("✅", key=f"approve_{email}", help="Approve user"):
+                                    try:
+                                        doc_id = user_data.get('id')
+                                        if not doc_id:
+                                            st.error("User document ID not found")
+                                            continue
+                                        
+                                        update_data = {
+                                            "status": "approved",
+                                            "approved_by": st.session_state.user_email,
+                                            "approved_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                        }
+                                        self.db.update_doc(USER_DB_COLLECTION, doc_id, update_data)
+                                        
+                                        st.success(f"✅ Approved {email}")
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Error approving user: {str(e)}")
+                            
+                            with col4:
+                                if st.button("❌", key=f"reject_{email}", help="Reject user"):
+                                    try:
+                                        doc_id = user_data.get('id')
+                                        if not doc_id:
+                                            st.error("User document ID not found")
+                                            continue
+                                        
+                                        update_data = {
+                                            "status": "rejected",
+                                            "rejected_by": st.session_state.user_email,
+                                            "rejected_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                        }
+                                        self.db.update_doc(USER_DB_COLLECTION, doc_id, update_data)
+                                        
+                                        st.warning(f"❌ Rejected {email}")
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Error rejecting user: {str(e)}")
+                            
+                            st.divider()
+            
+            with tab3:
+                st.subheader("Rejected Users")
                 
-                for user_data in pending_users:
-                    email = user_data.get('email', 'Unknown')
-                    if is_project_owner(email):
-                        continue
-                    
-                    with st.container():
-                        col1, col2, col3 = st.columns([4, 2, 2])
-                        with col1:
-                            st.text(f"📧 {email}")
-                            created_date = user_data.get('created_at', 'Unknown')
-                            st.caption(f"Registered: {created_date}")
+                rejected_users_list = [user for user in users if user.get('status') == 'rejected']
+                
+                if not rejected_users_list:
+                    st.info("✅ No rejected users found.")
+                else:
+                    for user_data in rejected_users_list:
+                        email = user_data.get('email', 'Unknown')
+                        name = user_data.get('name', '')
+                        if is_project_owner(email):
+                            continue
                         
-                        with col2:
-                            st.write("⏳ Awaiting approval")
-                        
-                        with col3:
-                            if st.button("✅ Approve", key=f"approve_{email}"):
-                                try:
-                                    # Update status to active using the user data we already have
-                                    doc_id = user_data.get('id')
-                                    if not doc_id:
-                                        st.error("User document ID not found")
-                                        return
-                                    
-                                    update_data = {
-                                        "status": "active",
-                                        "approved_by": st.session_state.user_email,
-                                        "approved_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                    }
-                                    self.db.update_doc("users", doc_id, update_data)
-                                    
-                                    st.success(f"✅ Approved {email}")
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"Error approving user: {str(e)}")
-                        
-                        st.divider()
+                        with st.container():
+                            col1, col2, col3 = st.columns([4, 2, 2])
+                            with col1:
+                                if name:
+                                    st.text(f"👤 {name}")
+                                    st.caption(f"📧 {email}")
+                                else:
+                                    st.text(f"📧 {email}")
+                                rejected_date = user_data.get('rejected_at', 'Unknown')
+                                st.caption(f"Rejected: {rejected_date}")
+                            
+                            with col2:
+                                st.write("🔴 Rejected")
+                            
+                            with col3:
+                                if st.button("🔄 Reinstate", key=f"reinstate_{email}", help="Approve this user"):
+                                    try:
+                                        doc_id = user_data.get('id')
+                                        if not doc_id:
+                                            st.error("User document ID not found")
+                                            continue
+                                        
+                                        update_data = {
+                                            "status": "approved",
+                                            "approved_by": st.session_state.user_email,
+                                            "approved_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                        }
+                                        self.db.update_doc(USER_DB_COLLECTION, doc_id, update_data)
+                                        
+                                        st.success(f"✅ Reinstated {email}")
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Error reinstating user: {str(e)}")
+                            
+                            st.divider()
                 
         except Exception as e:
             st.error(f"Error loading user management: {str(e)}")
@@ -1302,10 +1443,19 @@ class PrimeLabsUI:
             return
         
         is_authenticated = self.user_auth.check_authentication()
+        
+        # Check user status and show appropriate screen
+        if is_authenticated:
+            user_status = self.user_auth.get_user_status(st.session_state.user_email)
+            
+            if user_status == "rejected":
+                self.opening_screen.show_rejected_screen()
+                return
+            elif user_status == "pending_approval":
+                self.opening_screen.show_pending_approval_screen()
+                return
+        
         is_approved = self.user_auth.check_user_approval_status(st.session_state.user_email)
-        if is_authenticated and not is_approved:
-            self.opening_screen.show_pending_approval_screen()
-            return
 
 
         with st.sidebar:
@@ -1325,9 +1475,11 @@ class PrimeLabsUI:
                 if 'current_page' not in st.session_state:
                     st.session_state.current_page = "Medical Records"
                 
-                # Page selection - include Admin for project owners
+                # Page selection - include Admin only for project owners and Admin role users
                 page_options = ["Medical Records", "Expenses"]
-                if is_project_owner(st.session_state.user_email):
+                # Admin page accessible only to owners and Admin role users
+                if (is_project_owner(st.session_state.user_email) or 
+                    st.session_state.user_role == UserRole.ADMIN.value):
                     page_options.append("Admin")
                 
                 selected_page = st.radio(
@@ -1390,11 +1542,12 @@ class PrimeLabsUI:
             elif current_page == "Expenses":
                 ExpenseForm().render(is_authorized)
             elif current_page == "Admin":
-                # Only show admin page to project owners
-                if is_project_owner(st.session_state.user_email):
+                # Show admin page only to project owners and Admin role users
+                if (is_project_owner(st.session_state.user_email) or 
+                    st.session_state.user_role == UserRole.ADMIN.value):
                     self.opening_screen.show_admin_user_management()
                 else:
-                    st.error("❌ Access denied. Admin page is only accessible to project owners.")
+                    st.error("❌ Access denied. Admin page is only accessible to users with Admin role.")
         else:
             # Show medical records form by default for unauthorized users (they'll see the warning)
             MedicalRecordForm().render(is_authorized)

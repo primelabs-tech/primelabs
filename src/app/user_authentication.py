@@ -31,16 +31,19 @@ class UserAuthentication:
     
     def register(self, 
                     email: str, 
-                    password: str)->tuple[bool, str]:
+                    password: str,
+                    name: str = "")->tuple[bool, str]:
         """Create user in firebase auth and db"""
         user = None
         try:
             user = self.auth_client.create_user_with_email_and_password(
                         email, password)
             user_data = {
-                "email": email, 
+                "email": email,
+                "name": name,
                 "role": UserRole.EMPLOYEE.value, 
-                "status": "pending_approval"
+                "status": "pending_approval",
+                "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
             self.db.create_doc(
                 USER_DB_COLLECTION, 
@@ -65,10 +68,12 @@ class UserAuthentication:
             decoded_token = auth.verify_id_token(user['idToken'])
             user_email = decoded_token['email']
             user_role = self._get_user_role(user_email).value
+            user_name = self._get_user_name(user_email)
             
             st.session_state.authenticated = True
             st.session_state.user_role = user_role
             st.session_state.user_email = user_email
+            st.session_state.user_name = user_name
             st.session_state.user_token = user['idToken']
             st.session_state.user_id = decoded_token['uid']
 
@@ -132,7 +137,7 @@ class UserAuthentication:
             return False
     
     def check_user_approval_status(self, email):
-        """Check if user account is approved"""
+        """Check if user account is approved (status must be 'approved')"""
         if not UserAuthentication.verify_token_validity():
             return False
         if is_project_owner(email):
@@ -146,13 +151,49 @@ class UserAuthentication:
             if user_docs:
                 user_data = user_docs[0]
                 status = user_data.get("status", "")
+                # Only 'approved' status grants access
                 return status == "approved"
             else:
                 return False
                 
         except Exception as e:
             st.error(f"Error checking user status: {str(e)}")
-            return False    
+            return False
+    
+    def can_manage_user_status(self, email: str) -> bool:
+        """Check if user can manage other users' status (only Admin role users)"""
+        if not self.check_authentication():
+            return False
+        
+        # Project owners can always manage users
+        if is_project_owner(email):
+            return True
+        
+        # Only Admin role users can manage other users' status
+        user_role = st.session_state.get('user_role', '')
+        return user_role == UserRole.ADMIN.value
+    
+    def get_user_status(self, email: str) -> str:
+        """Get user's current status (approved, pending_approval, rejected)"""
+        if not UserAuthentication.verify_token_validity():
+            return "unauthenticated"
+        if is_project_owner(email):
+            return "approved"
+        
+        try:
+            user_docs = self.db.get_docs(
+                            USER_DB_COLLECTION, 
+                            filters=[("email", "==", email)]
+                        )
+            if user_docs:
+                user_data = user_docs[0]
+                return user_data.get("status", "pending_approval")
+            else:
+                return "pending_approval"
+                
+        except Exception as e:
+            st.error(f"Error getting user status: {str(e)}")
+            return "pending_approval"    
 
     def _get_user_role(self, email)->UserRole:
         """Get user role from db or return default role"""
@@ -172,6 +213,23 @@ class UserAuthentication:
         except Exception as e:
             st.error(f"Error getting user role: {str(e)}")
             return UserRole.EMPLOYEE
+    
+    def _get_user_name(self, email: str) -> str:
+        """Get user name from db or return email as fallback"""
+        try:
+            user_docs = self.db.get_docs(
+                            USER_DB_COLLECTION, 
+                            filters=[("email", "==", email)]
+                        )
+            if user_docs:
+                user_data = user_docs[0]
+                name = user_data.get("name", "")
+                return name if name else email
+            return email
+                
+        except Exception as e:
+            logger.error(f"Error getting user name: {str(e)}")
+            return email
         
     def _initialize_webapp(self):
         try:
@@ -191,6 +249,7 @@ class UserAuthentication:
         st.session_state.authenticated = False
         st.session_state.user_role = None
         st.session_state.user_email = None
+        st.session_state.user_name = None
         st.session_state.user_token = None
         st.session_state.user_id = None
 
