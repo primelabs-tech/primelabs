@@ -132,7 +132,7 @@ class UserAuthentication:
             return False
     
     def check_user_approval_status(self, email):
-        """Check if user account is approved"""
+        """Check if user account is approved (status must be 'approved')"""
         if not UserAuthentication.verify_token_validity():
             return False
         if is_project_owner(email):
@@ -146,13 +146,49 @@ class UserAuthentication:
             if user_docs:
                 user_data = user_docs[0]
                 status = user_data.get("status", "")
+                # Only 'approved' status grants access
                 return status == "approved"
             else:
                 return False
                 
         except Exception as e:
             st.error(f"Error checking user status: {str(e)}")
-            return False    
+            return False
+    
+    def can_manage_user_status(self, email: str) -> bool:
+        """Check if user can manage other users' status (only Admin role users)"""
+        if not self.check_authentication():
+            return False
+        
+        # Project owners can always manage users
+        if is_project_owner(email):
+            return True
+        
+        # Only Admin role users can manage other users' status
+        user_role = st.session_state.get('user_role', '')
+        return user_role == UserRole.ADMIN.value
+    
+    def get_user_status(self, email: str) -> str:
+        """Get user's current status (approved, pending_approval, rejected)"""
+        if not UserAuthentication.verify_token_validity():
+            return "unauthenticated"
+        if is_project_owner(email):
+            return "approved"
+        
+        try:
+            user_docs = self.db.get_docs(
+                            USER_DB_COLLECTION, 
+                            filters=[("email", "==", email)]
+                        )
+            if user_docs:
+                user_data = user_docs[0]
+                return user_data.get("status", "pending_approval")
+            else:
+                return "pending_approval"
+                
+        except Exception as e:
+            st.error(f"Error getting user status: {str(e)}")
+            return "pending_approval"    
 
     def _get_user_role(self, email)->UserRole:
         """Get user role from db or return default role"""
