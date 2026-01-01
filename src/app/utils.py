@@ -6,7 +6,6 @@ from fpdf import FPDF
 import io
 from datetime import datetime
 from data_models import MedicalRecord
-import os
 
 def get_firebase_auth_config():
     return  {
@@ -91,23 +90,8 @@ def generate_medical_record_pdf(record: MedicalRecord) -> bytes:
             # Set up initial position
             initial_y = 8
             
-            # Add logo from assets
-            logo_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'assets', 'primelabs_symbol.png')
-            # Add logo with proper sizing and centered vertically with the title
-            logo_width = 25  # Increased size
-            self.image(logo_path, x=30, y=initial_y, w=logo_width)
-            
-            # Add title - positioned right after the logo
-            self.set_font('Helvetica', 'B', 24)  # Increased font size
-            title = 'Prime Healthcare Diagnostic'
-            # Calculate title width to center it properly
-            title_width = self.get_string_width(title)
-            # Position title after logo with some padding
-            self.set_xy(60, initial_y + 5)  # Adjusted Y position for vertical centering with larger logo
-            self.cell(title_width, 10, title, 0, 0, 'L')
-            
             # Add horizontal line with some space below the header
-            self.set_y(initial_y + 25)  # Adjusted for larger elements
+            self.set_y(initial_y + 10)
             self.line(20, self.get_y(), 190, self.get_y())
             self.ln(20)  # Space after line
             
@@ -118,8 +102,8 @@ def generate_medical_record_pdf(record: MedicalRecord) -> bytes:
 
     # Create PDF object
     pdf = PDF()
-    # Set margins - adjusted top margin for larger header
-    pdf.set_margins(left=20, top=45, right=20)
+    # Set margins
+    pdf.set_margins(left=20, top=30, right=20)
     pdf.set_auto_page_break(auto=True, margin=20)
     
     pdf.alias_nb_pages()
