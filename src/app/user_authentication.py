@@ -68,10 +68,12 @@ class UserAuthentication:
             decoded_token = auth.verify_id_token(user['idToken'])
             user_email = decoded_token['email']
             user_role = self._get_user_role(user_email).value
+            user_name = self._get_user_name(user_email)
             
             st.session_state.authenticated = True
             st.session_state.user_role = user_role
             st.session_state.user_email = user_email
+            st.session_state.user_name = user_name
             st.session_state.user_token = user['idToken']
             st.session_state.user_id = decoded_token['uid']
 
@@ -211,6 +213,23 @@ class UserAuthentication:
         except Exception as e:
             st.error(f"Error getting user role: {str(e)}")
             return UserRole.EMPLOYEE
+    
+    def _get_user_name(self, email: str) -> str:
+        """Get user name from db or return email as fallback"""
+        try:
+            user_docs = self.db.get_docs(
+                            USER_DB_COLLECTION, 
+                            filters=[("email", "==", email)]
+                        )
+            if user_docs:
+                user_data = user_docs[0]
+                name = user_data.get("name", "")
+                return name if name else email
+            return email
+                
+        except Exception as e:
+            logger.error(f"Error getting user name: {str(e)}")
+            return email
         
     def _initialize_webapp(self):
         try:
@@ -230,6 +249,7 @@ class UserAuthentication:
         st.session_state.authenticated = False
         st.session_state.user_role = None
         st.session_state.user_email = None
+        st.session_state.user_name = None
         st.session_state.user_token = None
         st.session_state.user_id = None
 

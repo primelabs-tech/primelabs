@@ -156,7 +156,9 @@ def generate_medical_record_pdf(record: MedicalRecord) -> bytes:
     pdf.ln(5)
     pdf.set_font('Helvetica', 'I', 10)
     pdf.cell(0, 8, f'Record Date: {record.date}', 0, 1)
-    pdf.cell(0, 8, f'Updated by: {record.updated_by_email}', 0, 1)
+    # Use user name if available, otherwise use email
+    updated_by_display = st.session_state.get('user_name') or record.updated_by_email
+    pdf.cell(0, 8, f'Updated by: {updated_by_display}', 0, 1)
     
     # Return PDF as bytes
     return bytes(pdf.output())
