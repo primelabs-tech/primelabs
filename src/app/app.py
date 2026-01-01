@@ -1134,35 +1134,39 @@ class OpeningScreen:
     def show_error_message(self, 
                            error_message: str,
                            operation: str = "Operation"):
-        error_message = ""
-        if "MISSING_FIELDS" in error_message:
-            error_message = "Please fill in all fields"
-        elif "PASSWORD_MISMATCH" in error_message:
-            error_message = "Passwords do not match"
-        elif "MISSING_EMAIL" in error_message:
-            error_message = "Please enter your email address"
-        elif "EMAIL_NOT_FOUND" in error_message:
-            error_message = "No account found with this email address"
-        elif "EMAIL_EXISTS" in error_message:
-            error_message = "An account with this email already exists"
-        elif "WEAK_PASSWORD" in error_message:
-            error_message = "Password should be at least 6 characters"
-        elif "INVALID_EMAIL" in error_message:
-            error_message = "Invalid email format"
-        elif "EMAIL_NOT_FOUND" in error_message:
-            error_message = "No account found with this email"
-        elif "INVALID_PASSWORD" in error_message or "INVALID_LOGIN_CREDENTIALS" in error_message:
-            error_message = "Incorrect password or invalid login credentials"
-        elif "TOO_MANY_ATTEMPTS_TRY_LATER" in error_message:
-            error_message = "Too many failed attempts. Please try again later"
-        elif "USER_DISABLED" in error_message:
-            error_message = "This user account has been disabled"
-        elif "WEAK_PASSWORD" in error_message:
-            error_message = "Password is too weak. Please choose a stronger password"
-        else:
-            error_message = f"{operation} failed"            
+        display_message = ""
         
-        st.error(error_message)
+        if "MISSING_FIELDS" in error_message:
+            display_message = "Please fill in all fields"
+        elif "PASSWORD_MISMATCH" in error_message:
+            display_message = "Passwords do not match"
+        elif "MISSING_EMAIL" in error_message:
+            display_message = "Please enter your email address"
+        elif "EMAIL_NOT_FOUND" in error_message:
+            display_message = "No account found with this email address"
+        elif "EMAIL_EXISTS" in error_message:
+            display_message = "An account with this email already exists. Please use a different email or try logging in."
+        elif "WEAK_PASSWORD" in error_message:
+            display_message = "Password is too weak. Please use at least 6 characters with a mix of letters and numbers."
+        elif "INVALID_EMAIL" in error_message:
+            display_message = "Invalid email format. Please enter a valid email address (e.g., user@example.com)"
+        elif "INVALID_PASSWORD" in error_message or "INVALID_LOGIN_CREDENTIALS" in error_message:
+            display_message = "Incorrect password or invalid login credentials"
+        elif "TOO_MANY_ATTEMPTS_TRY_LATER" in error_message:
+            display_message = "Too many failed attempts. Please try again later."
+        elif "USER_DISABLED" in error_message:
+            display_message = "This user account has been disabled. Please contact the administrator."
+        elif "OPERATION_NOT_ALLOWED" in error_message:
+            display_message = "Registration is currently disabled. Please contact the administrator."
+        elif "NETWORK" in error_message.upper() or "CONNECTION" in error_message.upper():
+            display_message = "Network error. Please check your internet connection and try again."
+        elif "TIMEOUT" in error_message.upper():
+            display_message = "Request timed out. Please try again."
+        else:
+            # Show a user-friendly message with the actual error for debugging
+            display_message = f"{operation} failed. Please try again or contact support if the issue persists."
+        
+        st.error(f"❌ {display_message}")
 
     def token_expired_screen(self):
         """Show token expired message"""
