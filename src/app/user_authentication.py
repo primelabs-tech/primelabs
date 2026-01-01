@@ -31,16 +31,19 @@ class UserAuthentication:
     
     def register(self, 
                     email: str, 
-                    password: str)->tuple[bool, str]:
+                    password: str,
+                    name: str = "")->tuple[bool, str]:
         """Create user in firebase auth and db"""
         user = None
         try:
             user = self.auth_client.create_user_with_email_and_password(
                         email, password)
             user_data = {
-                "email": email, 
+                "email": email,
+                "name": name,
                 "role": UserRole.EMPLOYEE.value, 
-                "status": "pending_approval"
+                "status": "pending_approval",
+                "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
             self.db.create_doc(
                 USER_DB_COLLECTION, 

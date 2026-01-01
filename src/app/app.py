@@ -1095,18 +1095,22 @@ class OpeningScreen:
                 self.show_error_message(error_message, "Login")
  
     def register_screen(self):
-        email = st.text_input("Email")
+        name = st.text_input("Full Name", placeholder="Enter your full name")
+        email = st.text_input("Email", placeholder="Enter your email address")
         password = st.text_input("Password", type="password")
         confirm_password = st.text_input("Confirm Password", type="password")
 
         if st.button("Register"):
-            if not all([email, password, confirm_password]):
-                st.show_error_message("MISSING_FIELDS")
+            if not all([name, email, password, confirm_password]):
+                self.show_error_message("MISSING_FIELDS")
+                return
+            if len(name.strip()) < 2:
+                st.error("Name must be at least 2 characters")
                 return
             if password != confirm_password:
-                st.show_error_message("PASSWORD_MISMATCH")
+                self.show_error_message("PASSWORD_MISMATCH")
                 return 
-            is_registered, error_message = self.user_auth.register(email, password)
+            is_registered, error_message = self.user_auth.register(email, password, name.strip())
             if is_registered:
                 st.success("Registration successful!")
             else:
@@ -1224,6 +1228,7 @@ class OpeningScreen:
                 for i, user_doc in enumerate(users):
                     user_data = user_doc
                     email = user_data.get('email', 'Unknown')
+                    name = user_data.get('name', '')
                     current_role = user_data.get('role', UserRole.EMPLOYEE)
                     status = user_data.get('status', 'pending_approval')
                     
@@ -1235,7 +1240,11 @@ class OpeningScreen:
                         col1, col2, col3, col4, col5 = st.columns([3, 2, 2, 2, 1])
                         
                         with col1:
-                            st.text(f"📧 {email}")
+                            if name:
+                                st.text(f"👤 {name}")
+                                st.caption(f"📧 {email}")
+                            else:
+                                st.text(f"📧 {email}")
                         
                         with col2:
                             if status == "approved":
@@ -1306,13 +1315,18 @@ class OpeningScreen:
                 else:
                     for user_data in pending_users_list:
                         email = user_data.get('email', 'Unknown')
+                        name = user_data.get('name', '')
                         if is_project_owner(email):
                             continue
                         
                         with st.container():
                             col1, col2, col3, col4 = st.columns([4, 2, 1, 1])
                             with col1:
-                                st.text(f"📧 {email}")
+                                if name:
+                                    st.text(f"👤 {name}")
+                                    st.caption(f"📧 {email}")
+                                else:
+                                    st.text(f"📧 {email}")
                                 created_date = user_data.get('created_at', 'Unknown')
                                 st.caption(f"Registered: {created_date}")
                             
@@ -1371,13 +1385,18 @@ class OpeningScreen:
                 else:
                     for user_data in rejected_users_list:
                         email = user_data.get('email', 'Unknown')
+                        name = user_data.get('name', '')
                         if is_project_owner(email):
                             continue
                         
                         with st.container():
                             col1, col2, col3 = st.columns([4, 2, 2])
                             with col1:
-                                st.text(f"📧 {email}")
+                                if name:
+                                    st.text(f"👤 {name}")
+                                    st.caption(f"📧 {email}")
+                                else:
+                                    st.text(f"📧 {email}")
                                 rejected_date = user_data.get('rejected_at', 'Unknown')
                                 st.caption(f"Rejected: {rejected_date}")
                             
