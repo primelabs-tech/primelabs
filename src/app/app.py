@@ -427,7 +427,8 @@ class MedicalRecordForm:
                     "USG BREAST USG": 1200,
                     "USG NECK/THYROID USG": 1200,
                     "USG LOCAL REGION USG": 1200,
-                    "USG Follicular Study": 1200
+                    "USG Follicular Study": 1200,
+                    "ECG": 300
                 }
                 
                 # Multi-select for tests
