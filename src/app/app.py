@@ -121,6 +121,11 @@ class MedicalRecordForm:
         for key in form_keys_to_clear:
             if key in st.session_state:
                 del st.session_state[key]
+        
+        # Clear dynamic payment keys (payment_<test_name>)
+        payment_keys = [key for key in st.session_state if key.startswith('payment_')]
+        for key in payment_keys:
+            del st.session_state[key]
     
     def render(self, is_authorized: bool = False):
         if not is_authorized:
@@ -440,76 +445,94 @@ class MedicalRecordForm:
                     placeholder="Select tests..."
                 )
                 
-                # Display selected tests with prices in a table-like format
                 if selected_tests:
-                    st.markdown("**Selected Tests:**")
-                    
-                    # Calculate total price
-                    total_price = sum(TEST_PRICES[test] for test in selected_tests)
-                    
-                    # Display each selected test with its price
-                    for test in selected_tests:
-                        col1, col2 = st.columns([3, 1])
-                        with col1:
-                            st.text(f"• {test}")
-                        with col2:
-                            st.text(f"₹{TEST_PRICES[test]:,}")
-                    
-                    # Show total and count in aligned columns
-                    st.markdown("---")
-                    col1, col2 = st.columns([3, 1])
-                    with col1:
-                        st.markdown("**Total Price:**")
-                    with col2:
-                        st.markdown(f"<span style='color: #28a745; font-weight: 800; font-size: 1.1em;'>₹{total_price:,}</span>", unsafe_allow_html=True)
-                    
-                    # Tests selected on same line
-                    col1, col2 = st.columns([3, 1])
-                    with col1:
-                        st.markdown(f"**Tests Selected:** {len(selected_tests)}")
+                    st.success(f"✅ {len(selected_tests)} test(s) selected")
                 else:
                     st.info("💡 Please select at least one medical test")
             
             # PAYMENT INFORMATION SECTION
             with st.expander("💳 Payment Information", expanded=True):
-                col1, col2 = st.columns(2)
-                
-                # Calculate total price for selected tests
-                total_test_price = sum(TEST_PRICES[test] for test in selected_tests) if selected_tests else 0
-                
-                with col1:
-                    st.markdown("**Payment Amount**")
-                    payment_amount = st.number_input(
-                        label='Payment Amount (₹) *',
-                        min_value=0,
-                        max_value=100000,
-                        step=50,
-                        value=0,
-                        help='💰 Enter the payment amount received',
-                        key="payment_amount"
-                    )
+                if not selected_tests:
+                    st.info("💡 Please select medical tests first to enter payment details")
+                    # Initialize empty values for when no tests are selected
+                    test_payments = {}
+                    total_payment = 0
+                    total_test_price = 0
+                    total_discount = 0
+                else:
+                    st.markdown("**Payment per Test** (Enter amount paid for each test)")
                     
-                    # Show payment status
-                    if selected_tests and payment_amount > 0:
-                        if payment_amount >= total_test_price:
-                            st.success(f"✅ Full payment received (₹{payment_amount:,} of ₹{total_test_price:,})")
+                    # Calculate total price for selected tests
+                    total_test_price = sum(TEST_PRICES[test] for test in selected_tests)
+                    
+                    # Create payment input for each selected test
+                    test_payments = {}
+                    for test in selected_tests:
+                        test_price = TEST_PRICES[test]
+                        col1, col2, col3 = st.columns([3, 2, 1])
+                        
+                        with col1:
+                            st.markdown(f"**{test}**")
+                            st.caption(f"Price: ₹{test_price:,}")
+                        
+                        with col2:
+                            payment_key = f"payment_{test.replace(' ', '_').replace('/', '_').replace('-', '_')}"
+                            test_payment = st.number_input(
+                                label=f"Amount for {test}",
+                                min_value=0,
+                                max_value=test_price,
+                                step=10,
+                                value=test_price,  # Default to full price
+                                help=f'Enter amount paid for {test} (max ₹{test_price:,})',
+                                key=payment_key,
+                                label_visibility="collapsed"
+                            )
+                            test_payments[test] = test_payment
+                        
+                        with col3:
+                            discount = test_price - test_payment
+                            if discount > 0:
+                                st.markdown(f"<span style='color: #dc3545;'>-₹{discount:,}</span>", unsafe_allow_html=True)
+                            else:
+                                st.markdown("✅")
+                    
+                    # Calculate totals
+                    total_payment = sum(test_payments.values())
+                    total_discount = total_test_price - total_payment
+                    
+                    # Show summary
+                    st.markdown("---")
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        st.markdown("**Total Price:**")
+                    with col2:
+                        st.markdown(f"₹{total_test_price:,}")
+                    
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        st.markdown("**Total Payment:**")
+                    with col2:
+                        st.markdown(f"<span style='color: #28a745; font-weight: 800;'>₹{total_payment:,}</span>", unsafe_allow_html=True)
+                    
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        st.markdown("**Total Discount:**")
+                    with col2:
+                        if total_discount > 0:
+                            st.markdown(f"<span style='color: #dc3545; font-weight: 600;'>₹{total_discount:,}</span>", unsafe_allow_html=True)
                         else:
-                            remaining = total_test_price - payment_amount
-                            st.warning(f"⚠️ Partial payment. Discount: ₹{remaining:,}")
-                    elif not selected_tests:
-                        st.info("💡 Please select medical tests first")
-                    else:
-                        st.info("💡 Please enter the payment amount")
+                            st.markdown("₹0")
                 
-                with col2:
-                    st.markdown("**Additional Notes**")
-                    comments = st.text_area(
-                        label='Comments/Notes',
-                        placeholder="Any additional notes or comments...",
-                        help='📝 Enter any relevant comments about the test or patient',
-                        height=100,
-                        key="comments"
-                    )
+                # Comments section
+                st.markdown("---")
+                st.markdown("**Additional Notes**")
+                comments = st.text_area(
+                    label='Comments/Notes',
+                    placeholder="Any additional notes or comments...",
+                    help='📝 Enter any relevant comments about the test or patient',
+                    height=100,
+                    key="comments"
+                )
             
             st.markdown("---")
             
@@ -522,7 +545,7 @@ class MedicalRecordForm:
                     len(patient_name.strip()) >= 2 and
                     selected_tests and  # At least one test selected
                     len(selected_tests) > 0 and
-                    payment_amount > 0 and
+                    total_payment > 0 and
                     not st.session_state.processing_submission  # Disable while processing
                 )
                 
@@ -549,7 +572,7 @@ class MedicalRecordForm:
             
             # Show required fields reminder
             if not can_submit:
-                st.info("📋 **Required fields:** Patient Name, At least one Medical Test, Payment Amount" + 
+                st.info("📋 **Required fields:** Patient Name, At least one Medical Test, Payment > 0" + 
                        (" + Doctor Details (if referral selected)" if through_referral else "") +
                        (" + Valid Phone Number (if phone selected)" if phone_available else ""))
         
@@ -574,9 +597,9 @@ class MedicalRecordForm:
                             location=doctor_location.strip()
                         )
                     
-                    # Create list of medical tests
+                    # Create list of medical tests with actual paid prices
                     medical_tests_list = [
-                        MedicalTest(name=test_name, price=TEST_PRICES[test_name])
+                        MedicalTest(name=test_name, price=test_payments.get(test_name, TEST_PRICES[test_name]))
                         for test_name in selected_tests
                     ]
                     
@@ -585,7 +608,7 @@ class MedicalRecordForm:
                         patient=patient,
                         doctor=referring_doctor,
                         medical_tests=medical_tests_list,
-                        payment=Payment(amount=payment_amount),
+                        payment=Payment(amount=total_payment),
                         date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         comments=comments.strip() if comments else "",
                         updated_by=st.session_state.user_role,
