@@ -54,10 +54,9 @@ class Doctor(BaseModel):
     phone: str = Field(description="Phone number of the doctor", default=None)
     
 
-#TODO: prices do not change so this can be a simple lookup table
 class MedicalTest(BaseModel):
     name: str = Field(description="Name of the test")
-    price: int = Field(description="Price of the test", default=None)
+    price: int = Field(description="Price paid for the test (after discount)", default=None)
 
 
 class DoctorReferral(BaseModel):
