@@ -1,8 +1,17 @@
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 from strenum import StrEnum
 from pydantic import BaseModel, Field
+
+
+# Indian Standard Time offset (UTC+5:30)
+IST = timezone(timedelta(hours=5, minutes=30))
+
+
+def get_ist_now() -> datetime:
+    """Get current datetime in Indian Standard Time (IST, UTC+5:30)"""
+    return datetime.now(IST)
 
 
 class UserRole(StrEnum):
@@ -28,7 +37,7 @@ class DatabaseRecord(BaseModel):
     """
     Base class for all database records
     """
-    date: datetime = Field(description="Date time of the record", default=datetime.now())
+    date: datetime = Field(description="Date time of the record (IST)", default_factory=get_ist_now)
     updated_by: UserRole = Field(description="Last updated by")
     updated_by_email: str = Field(description="Email of the user who last updated the record")
 

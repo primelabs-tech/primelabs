@@ -21,6 +21,8 @@ from utils import (
     get_user_authentication,
     get_pending_approval_html,
     is_project_owner,
+    get_ist_now,
+    get_ist_now_str,
 )
 from logger import logger
 
@@ -95,7 +97,7 @@ class MedicalRecordForm:
         from utils import generate_medical_record_pdf
         
         pdf_bytes = generate_medical_record_pdf(medical_record)
-        filename = f"medical_record_{medical_record.patient.name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        filename = f"medical_record_{medical_record.patient.name}_{get_ist_now_str('%Y%m%d_%H%M%S')}.pdf"
         
         left_col, center_col, right_col = st.columns([1, 2, 1])
         with center_col:
@@ -609,7 +611,7 @@ class MedicalRecordForm:
                         doctor=referring_doctor,
                         medical_tests=medical_tests_list,
                         payment=Payment(amount=total_payment),
-                        date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        date=get_ist_now_str(),
                         comments=comments.strip() if comments else "",
                         updated_by=st.session_state.user_role,
                         updated_by_email=st.session_state.user_email
@@ -1028,7 +1030,7 @@ class ExpenseForm:
                             expense_type=expense_type,
                             amount=int(expense_amount),
                             description=expense_description.strip(),
-                            date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            date=get_ist_now_str(),
                             updated_by=st.session_state.user_role,
                             updated_by_email=st.session_state.user_email
                         )
@@ -1344,7 +1346,7 @@ class OpeningScreen:
                                         update_data = {
                                             "status": new_status,
                                             "updated_by": st.session_state.user_email,
-                                            "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                            "updated_at": get_ist_now_str()
                                         }
                                         # Only update role if owner
                                         if is_owner:
@@ -1401,7 +1403,7 @@ class OpeningScreen:
                                         update_data = {
                                             "status": "approved",
                                             "approved_by": st.session_state.user_email,
-                                            "approved_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                            "approved_at": get_ist_now_str()
                                         }
                                         self.db.update_doc(USER_DB_COLLECTION, doc_id, update_data)
                                         
@@ -1421,7 +1423,7 @@ class OpeningScreen:
                                         update_data = {
                                             "status": "rejected",
                                             "rejected_by": st.session_state.user_email,
-                                            "rejected_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                            "rejected_at": get_ist_now_str()
                                         }
                                         self.db.update_doc(USER_DB_COLLECTION, doc_id, update_data)
                                         
@@ -1471,7 +1473,7 @@ class OpeningScreen:
                                         update_data = {
                                             "status": "approved",
                                             "approved_by": st.session_state.user_email,
-                                            "approved_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                            "approved_at": get_ist_now_str()
                                         }
                                         self.db.update_doc(USER_DB_COLLECTION, doc_id, update_data)
                                         

@@ -4,8 +4,22 @@ import streamlit as st
 import base64
 from fpdf import FPDF
 import io
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from data_models import MedicalRecord
+
+
+# Indian Standard Time offset (UTC+5:30)
+IST = timezone(timedelta(hours=5, minutes=30))
+
+
+def get_ist_now() -> datetime:
+    """Get current datetime in Indian Standard Time (IST, UTC+5:30)"""
+    return datetime.now(IST)
+
+
+def get_ist_now_str(fmt: str = "%Y-%m-%d %H:%M:%S") -> str:
+    """Get current datetime in IST as a formatted string"""
+    return get_ist_now().strftime(fmt)
 
 def get_firebase_auth_config():
     return  {

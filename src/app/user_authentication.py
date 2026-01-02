@@ -14,6 +14,7 @@ from utils import (
     get_firebase_auth_config,
     get_firestore,
     is_project_owner,
+    get_ist_now_str,
 )
 from data_models import UserRole, AuthorizationStatus
 
@@ -43,7 +44,7 @@ class UserAuthentication:
                 "name": name,
                 "role": UserRole.EMPLOYEE.value, 
                 "status": "pending_approval",
-                "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                "created_at": get_ist_now_str()
             }
             self.db.create_doc(
                 USER_DB_COLLECTION, 
