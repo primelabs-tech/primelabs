@@ -137,10 +137,13 @@ def generate_medical_record_pdf(record: MedicalRecord) -> bytes:
         add_section('Doctor Information', doctor_info)
     
     # Medical Test Section
-    test_info = [
-        f'Test: {record.medical_test.name}',
-        f'Amount Paid: Rs. {record.payment.amount}'
-    ]
+    test_info = []
+    total_test_price = 0
+    for test in record.medical_tests:
+        test_info.append(f'{test.name}: Rs. {test.price:,}')
+        total_test_price += test.price or 0
+    test_info.append(f'Total Test Price: Rs. {total_test_price:,}')
+    test_info.append(f'Amount Paid: Rs. {record.payment.amount:,}')
     add_section('Medical Test Details', test_info)
     
     # Comments Section

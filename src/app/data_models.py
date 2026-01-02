@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 
 from strenum import StrEnum
@@ -65,8 +65,8 @@ class Payment(BaseModel):
 class MedicalRecord(DatabaseRecord):
     patient: Patient = Field(description="Patient who underwent the medical test")
     doctor: Optional[Doctor] = Field(description="Doctor who referred the patient", default=None)
-    medical_test: MedicalTest = Field(description="Medical test performed on the patient")
-    payment: Payment = Field(description="Payment made for the medical test")
+    medical_tests: List[MedicalTest] = Field(description="Medical tests performed on the patient")
+    payment: Payment = Field(description="Payment made for the medical tests")
     comments : str = Field(description="Comments on the medical entry", default=None)
     
     def __str__(self) -> str:
@@ -81,7 +81,12 @@ class MedicalRecord(DatabaseRecord):
             lines.append(f"Patient Address: {self.patient.address}")
         if self.doctor:
             lines.append(f"Referred by Dr. {self.doctor.name} from {self.doctor.location}")
-        lines.append(f"Paid {self.payment.amount} Rupees for {self.medical_test.name}")
+        
+        # Handle multiple tests
+        test_names = ", ".join([t.name for t in self.medical_tests])
+        total_price = sum([t.price or 0 for t in self.medical_tests])
+        lines.append(f"Paid {self.payment.amount} Rupees for {test_names} (Total price: {total_price})")
+        
         if self.comments:
             lines.append(f"Comments: {self.comments}")
             
@@ -138,8 +143,11 @@ if __name__=="__main__":
     medical_entry = MedicalRecord(
         patient=Patient(name="John Doe"),
         doctor=Doctor(name="Dr. Smith", location="Bangalore"),
-        medical_test=MedicalTest(name="Blood Test", price=200),
-        payment=Payment(amount=200),
+        medical_tests=[
+            MedicalTest(name="Blood Test", price=200),
+            MedicalTest(name="Urine Test", price=150)
+        ],
+        payment=Payment(amount=350),
         comments="Test comments",
         updated_by=CURRENT_USER,
         updated_by_email="test@example.com"

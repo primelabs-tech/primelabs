@@ -73,8 +73,11 @@ class MedicalRecordForm:
                     st.write(f"• Address: {medical_record.patient.address}")
                 
                 st.markdown("**Test Information:**")
-                st.write(f"• Test: {medical_record.medical_test.name}")
-                st.write(f"• Price: ₹{medical_record.medical_test.price}")
+                total_price = 0
+                for test in medical_record.medical_tests:
+                    st.write(f"• {test.name}: ₹{test.price:,}")
+                    total_price += test.price or 0
+                st.write(f"• **Total Price: ₹{total_price:,}**")
             
             with col2:
                 if medical_record.doctor:
@@ -112,7 +115,7 @@ class MedicalRecordForm:
         form_keys_to_clear = [
             'patient_name', 'patient_phone', 'patient_address',
             'phone_checkbox', 'address_checkbox', 'referral_checkbox',
-            'doctor_name', 'doctor_location', 'test_type', 'payment_amount',
+            'doctor_name', 'doctor_location', 'test_type', 'test_types', 'payment_amount',
             'comments'
         ]
         for key in form_keys_to_clear:
@@ -427,41 +430,58 @@ class MedicalRecordForm:
                     "USG Follicular Study": 1200
                 }
                 
-                col1, col2, col3 = st.columns([2, 2, 1])
+                # Multi-select for tests
+                selected_tests = st.multiselect(
+                    label='🔬 Medical Test Types *',
+                    options=list(TEST_PRICES.keys()),
+                    help='Select one or more medical tests to be performed',
+                    key="test_types",
+                    placeholder="Select tests..."
+                )
                 
-                with col1:
-                    test_name = st.selectbox(
-                        label='🔬 Medical Test Type *',
-                        options=list(TEST_PRICES.keys()),
-                        help='Select the type of medical test to be performed',
-                        key="test_type"
-                    )
-                
-                with col2:
-                    test_price = st.text_input(
-                        label='💰 Test Price',
-                        disabled=True,
-                        value=f"₹{TEST_PRICES[test_name]:,}",
-                        help="Automatically calculated based on test type"
-                    )
-                
-                with col3:
-                    st.metric(
-                        label="Price",
-                        value=f"₹{TEST_PRICES[test_name]:,}",
-                        help="Test price in Indian Rupees"
-                    )
+                # Display selected tests with prices in a table-like format
+                if selected_tests:
+                    st.markdown("**Selected Tests:**")
+                    
+                    # Calculate total price
+                    total_price = sum(TEST_PRICES[test] for test in selected_tests)
+                    
+                    # Display each selected test with its price
+                    for test in selected_tests:
+                        col1, col2 = st.columns([3, 1])
+                        with col1:
+                            st.text(f"• {test}")
+                        with col2:
+                            st.text(f"₹{TEST_PRICES[test]:,}")
+                    
+                    # Show total and count in aligned columns
+                    st.markdown("---")
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        st.markdown("**Total Price:**")
+                    with col2:
+                        st.markdown(f"<span style='color: #28a745; font-weight: 800; font-size: 1.1em;'>₹{total_price:,}</span>", unsafe_allow_html=True)
+                    
+                    # Tests selected on same line
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        st.markdown(f"**Tests Selected:** {len(selected_tests)}")
+                else:
+                    st.info("💡 Please select at least one medical test")
             
             # PAYMENT INFORMATION SECTION
             with st.expander("💳 Payment Information", expanded=True):
                 col1, col2 = st.columns(2)
+                
+                # Calculate total price for selected tests
+                total_test_price = sum(TEST_PRICES[test] for test in selected_tests) if selected_tests else 0
                 
                 with col1:
                     st.markdown("**Payment Amount**")
                     payment_amount = st.number_input(
                         label='Payment Amount (₹) *',
                         min_value=0,
-                        max_value=10000,
+                        max_value=100000,
                         step=50,
                         value=0,
                         help='💰 Enter the payment amount received',
@@ -469,13 +489,14 @@ class MedicalRecordForm:
                     )
                     
                     # Show payment status
-                    if payment_amount > 0:
-                        test_price_num = TEST_PRICES[test_name]
-                        if payment_amount >= test_price_num:
-                            st.success(f"✅ Full payment received (₹{payment_amount:,})")
+                    if selected_tests and payment_amount > 0:
+                        if payment_amount >= total_test_price:
+                            st.success(f"✅ Full payment received (₹{payment_amount:,} of ₹{total_test_price:,})")
                         else:
-                            remaining = test_price_num - payment_amount
+                            remaining = total_test_price - payment_amount
                             st.warning(f"⚠️ Partial payment. Discount: ₹{remaining:,}")
+                    elif not selected_tests:
+                        st.info("💡 Please select medical tests first")
                     else:
                         st.info("💡 Please enter the payment amount")
                 
@@ -498,6 +519,8 @@ class MedicalRecordForm:
                 can_submit = (
                     patient_name and 
                     len(patient_name.strip()) >= 2 and
+                    selected_tests and  # At least one test selected
+                    len(selected_tests) > 0 and
                     payment_amount > 0 and
                     not st.session_state.processing_submission  # Disable while processing
                 )
@@ -525,7 +548,7 @@ class MedicalRecordForm:
             
             # Show required fields reminder
             if not can_submit:
-                st.info("📋 **Required fields:** Patient Name, Payment Amount" + 
+                st.info("📋 **Required fields:** Patient Name, At least one Medical Test, Payment Amount" + 
                        (" + Doctor Details (if referral selected)" if through_referral else "") +
                        (" + Valid Phone Number (if phone selected)" if phone_available else ""))
         
@@ -550,11 +573,17 @@ class MedicalRecordForm:
                             location=doctor_location.strip()
                         )
                     
+                    # Create list of medical tests
+                    medical_tests_list = [
+                        MedicalTest(name=test_name, price=TEST_PRICES[test_name])
+                        for test_name in selected_tests
+                    ]
+                    
                     # Create medical record
                     medical_entry = MedicalRecord(
                         patient=patient,
                         doctor=referring_doctor,
-                        medical_test=MedicalTest(name=test_name, price=TEST_PRICES[test_name]),
+                        medical_tests=medical_tests_list,
                         payment=Payment(amount=payment_amount),
                         date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         comments=comments.strip() if comments else "",
@@ -1497,7 +1526,7 @@ class PrimeLabsUI:
                         # Medical form keys
                         'patient_name', 'patient_phone', 'patient_address',
                         'phone_checkbox', 'address_checkbox', 'referral_checkbox',
-                        'doctor_name', 'doctor_location', 'test_type', 'payment_amount',
+                        'doctor_name', 'doctor_location', 'test_type', 'test_types', 'payment_amount',
                         'comments', 'form_errors', 'processing_submission', 
                         'show_success', 'last_record',
                         # Expense form keys
