@@ -76,6 +76,35 @@ def show_pending_approval_page():
     """)
 
 
+def format_date_time(date_value) -> str:
+    """Format date to dd/mm/yyyy and time to 12hr format.
+    
+    Args:
+        date_value: Date as string or datetime object
+        
+    Returns:
+        Formatted date and time string
+    """
+    try:
+        if isinstance(date_value, str):
+            # Try parsing common formats
+            for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%d/%m/%Y %H:%M:%S"]:
+                try:
+                    dt = datetime.strptime(date_value, fmt)
+                    break
+                except ValueError:
+                    continue
+            else:
+                return str(date_value)  # Return as-is if parsing fails
+        else:
+            dt = date_value
+        
+        # Format: dd/mm/yyyy hh:mm AM/PM
+        return dt.strftime("%d/%m/%Y %I:%M %p")
+    except Exception:
+        return str(date_value)
+
+
 def generate_medical_record_pdf(record: MedicalRecord) -> bytes:
     """Generate a PDF document from a medical record.
     
@@ -92,76 +121,113 @@ def generate_medical_record_pdf(record: MedicalRecord) -> bytes:
             
             # Add horizontal line with some space below the header
             self.set_y(initial_y + 10)
-            self.line(20, self.get_y(), 190, self.get_y())
-            self.ln(20)  # Space after line
+            self.line(15, self.get_y(), 195, self.get_y())
+            self.ln(15)  # Space after line
             
         def footer(self):
-            self.set_y(-20)
-            self.set_font('Helvetica', 'I', 8)
-            self.cell(0, 10, f'Page {self.page_no()}/{{nb}}', 0, 0, 'C')
+            self.set_y(-15)
+            self.set_font('Helvetica', 'I', 7)
+            self.cell(0, 8, f'Page {self.page_no()}/{{nb}}', 0, 0, 'C')
 
     # Create PDF object
     pdf = PDF()
     # Set margins
-    pdf.set_margins(left=20, top=30, right=20)
-    pdf.set_auto_page_break(auto=True, margin=20)
+    pdf.set_margins(left=15, top=25, right=15)
+    pdf.set_auto_page_break(auto=True, margin=15)
     
     pdf.alias_nb_pages()
     pdf.add_page()
     
-    # Content with improved spacing
-    def add_section(title, content_list):
-        pdf.set_font('Helvetica', 'B', 14)
-        pdf.cell(0, 10, title, 0, 1)
-        pdf.set_font('Helvetica', '', 12)
-        for line in content_list:
-            pdf.cell(0, 8, line, 0, 1)  # Reduced line height
-        pdf.ln(5)  # Space between sections
+    # Page width for calculations
+    page_width = 210 - 30  # A4 width minus margins (15 each side)
+    half_width = page_width / 2
     
-    # Patient Information Section
-    patient_info = [
-        f'Name: {record.patient.name}'
-    ]
-    if record.patient.phone:
-        patient_info.append(f'Phone: {record.patient.phone}')
-    if record.patient.address:
-        patient_info.append(f'Address: {record.patient.address}')
-    add_section('Patient Information', patient_info)
+    # ===== PATIENT AND DOCTOR INFORMATION SIDE BY SIDE =====
+    start_y = pdf.get_y()
     
-    # Doctor Information Section
+    # Patient Information (Left side)
+    pdf.set_font('Helvetica', 'B', 10)
+    pdf.cell(half_width, 6, 'Patient Information', 0, 0)
+    
+    # Doctor Information (Right side) - only show header if doctor exists
     if record.doctor:
-        doctor_info = [
-            f'Name: Dr. {record.doctor.name}',
-            f'Location: {record.doctor.location}'
-        ]
-        add_section('Doctor Information', doctor_info)
+        pdf.cell(half_width, 6, 'Doctor Information', 0, 1)
+    else:
+        pdf.ln(6)
     
-    # Medical Test Section
-    test_info = []
-    total_test_price = 0
-    for test in record.medical_tests:
-        test_info.append(f'{test.name}: Rs. {test.price:,}')
-        total_test_price += test.price or 0
-    test_info.append(f'Total Test Price: Rs. {total_test_price:,}')
-    test_info.append(f'Amount Paid: Rs. {record.payment.amount:,}')
-    add_section('Medical Test Details', test_info)
-    
-    # Comments Section
-    if record.comments:
-        pdf.set_font('Helvetica', 'B', 14)
-        pdf.cell(0, 10, 'Additional Comments', 0, 1)
-        pdf.set_font('Helvetica', '', 12)
-        # Handle multi-line comments with proper wrapping
-        pdf.multi_cell(0, 8, record.comments)
+    # Patient details
+    pdf.set_font('Helvetica', '', 9)
+    pdf.cell(half_width, 5, f'Name: {record.patient.name}', 0, 0)
+    if record.doctor:
+        pdf.cell(half_width, 5, f'Name: Dr. {record.doctor.name}', 0, 1)
+    else:
         pdf.ln(5)
     
-    # Footer Information
-    pdf.ln(5)
-    pdf.set_font('Helvetica', 'I', 10)
-    pdf.cell(0, 8, f'Record Date: {record.date}', 0, 1)
+    if record.patient.phone:
+        pdf.cell(half_width, 5, f'Phone: {record.patient.phone}', 0, 0)
+        if record.doctor:
+            pdf.cell(half_width, 5, f'Location: {record.doctor.location}', 0, 1)
+        else:
+            pdf.ln(5)
+    elif record.doctor:
+        pdf.cell(half_width, 5, '', 0, 0)  # Empty cell for patient
+        pdf.cell(half_width, 5, f'Location: {record.doctor.location}', 0, 1)
+    
+    if record.patient.address:
+        pdf.cell(half_width, 5, f'Address: {record.patient.address}', 0, 1)
+    
+    pdf.ln(6)
+    
+    # ===== MEDICAL TESTS SECTION =====
+    pdf.set_font('Helvetica', 'B', 10)
+    pdf.cell(0, 6, 'Medical Tests', 0, 1)
+    pdf.set_font('Helvetica', '', 9)
+    
+    # Get test names
+    test_names = [test.name for test in record.medical_tests]
+    
+    # Calculate cell width for 4 columns (invisible table)
+    tests_per_row = 4
+    cell_width = page_width / tests_per_row
+    
+    # Display tests in rows of 4
+    for i, test_name in enumerate(test_names):
+        pdf.cell(cell_width, 5, f'- {test_name}', 0, 0)
+        # New line after every 4 tests or at the end
+        if (i + 1) % tests_per_row == 0:
+            pdf.ln(5)
+    
+    # If last row wasn't complete, add new line
+    if len(test_names) % tests_per_row != 0:
+        pdf.ln(5)
+    
+    pdf.ln(4)
+    
+    # ===== PAYMENT SECTION =====
+    pdf.set_font('Helvetica', 'B', 10)
+    pdf.cell(0, 6, 'Payment Details', 0, 1)
+    pdf.set_font('Helvetica', '', 9)
+    pdf.cell(0, 5, f'Amount Paid: Rs. {record.payment.amount:,}', 0, 1)
+    
+    pdf.ln(4)
+    
+    # ===== COMMENTS SECTION =====
+    if record.comments:
+        pdf.set_font('Helvetica', 'B', 10)
+        pdf.cell(0, 6, 'Additional Comments', 0, 1)
+        pdf.set_font('Helvetica', '', 9)
+        pdf.multi_cell(0, 5, record.comments)
+        pdf.ln(4)
+    
+    # ===== FOOTER INFORMATION =====
+    pdf.ln(3)
+    pdf.set_font('Helvetica', 'I', 8)
+    formatted_date = format_date_time(record.date)
     # Use user name if available, otherwise use email
     updated_by_display = st.session_state.get('user_name') or record.updated_by_email
-    pdf.cell(0, 8, f'Updated by: {updated_by_display}', 0, 1)
+    # Date and Patient care incharge on same line
+    pdf.cell(half_width, 5, f'Date: {formatted_date}', 0, 0)
+    pdf.cell(half_width, 5, f'Patient care incharge: {updated_by_display}', 0, 1)
     
     # Return PDF as bytes
     return bytes(pdf.output())

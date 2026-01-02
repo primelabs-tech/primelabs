@@ -233,12 +233,17 @@ class UserAuthentication:
         
     def _initialize_webapp(self):
         try:
-            cred: dict = get_firestore_admin_credential_dict()
-            cred = credentials.Certificate(cred)
-            firebase_admin.initialize_app(cred)
-        except Exception as e:
-            logger.error(f"Firebase initialization failed: {str(e)}")
-            raise
+            # Check if Firebase app is already initialized
+            firebase_admin.get_app()
+        except ValueError:
+            # App not initialized, initialize it now
+            try:
+                cred: dict = get_firestore_admin_credential_dict()
+                cred = credentials.Certificate(cred)
+                firebase_admin.initialize_app(cred)
+            except Exception as e:
+                logger.error(f"Firebase initialization failed: {str(e)}")
+                raise
 
     def _get_auth_client(self):
         auth_config = get_firebase_auth_config()
