@@ -1,7 +1,11 @@
 import logging
 import streamlit as st
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Any
+
+
+# Indian Standard Time offset (UTC+5:30)
+IST = timezone(timedelta(hours=5, minutes=30))
 
 
 class Logger:
@@ -32,7 +36,7 @@ class Logger:
     def _get_extra_fields(self, **kwargs: Any) -> dict:
         """Get extra fields for logging"""
         extra = {
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': datetime.now(IST).isoformat(),
             'user_email': st.session_state.get('user_email', 'anonymous'),
             'user_role': st.session_state.get('user_role', 'unknown')
         }

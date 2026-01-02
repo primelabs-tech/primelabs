@@ -21,6 +21,8 @@ from utils import (
     get_user_authentication,
     get_pending_approval_html,
     is_project_owner,
+    get_ist_now,
+    get_ist_now_str,
 )
 from logger import logger
 
@@ -73,8 +75,11 @@ class MedicalRecordForm:
                     st.write(f"• Address: {medical_record.patient.address}")
                 
                 st.markdown("**Test Information:**")
-                st.write(f"• Test: {medical_record.medical_test.name}")
-                st.write(f"• Price: ₹{medical_record.medical_test.price}")
+                total_price = 0
+                for test in medical_record.medical_tests:
+                    st.write(f"• {test.name}: ₹{test.price:,}")
+                    total_price += test.price or 0
+                st.write(f"• **Total Price: ₹{total_price:,}**")
             
             with col2:
                 if medical_record.doctor:
@@ -92,7 +97,7 @@ class MedicalRecordForm:
         from utils import generate_medical_record_pdf
         
         pdf_bytes = generate_medical_record_pdf(medical_record)
-        filename = f"medical_record_{medical_record.patient.name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        filename = f"medical_record_{medical_record.patient.name}_{get_ist_now_str('%Y%m%d_%H%M%S')}.pdf"
         
         left_col, center_col, right_col = st.columns([1, 2, 1])
         with center_col:
@@ -112,12 +117,17 @@ class MedicalRecordForm:
         form_keys_to_clear = [
             'patient_name', 'patient_phone', 'patient_address',
             'phone_checkbox', 'address_checkbox', 'referral_checkbox',
-            'doctor_name', 'doctor_location', 'test_type', 'payment_amount',
+            'doctor_name', 'doctor_location', 'test_type', 'test_types', 'payment_amount',
             'comments'
         ]
         for key in form_keys_to_clear:
             if key in st.session_state:
                 del st.session_state[key]
+        
+        # Clear dynamic payment keys (payment_<test_name>)
+        payment_keys = [key for key in st.session_state if key.startswith('payment_')]
+        for key in payment_keys:
+            del st.session_state[key]
     
     def render(self, is_authorized: bool = False):
         if not is_authorized:
@@ -424,70 +434,107 @@ class MedicalRecordForm:
                     "USG BREAST USG": 1200,
                     "USG NECK/THYROID USG": 1200,
                     "USG LOCAL REGION USG": 1200,
-                    "USG Follicular Study": 1200
+                    "USG Follicular Study": 1200,
+                    "ECG": 300
                 }
                 
-                col1, col2, col3 = st.columns([2, 2, 1])
+                # Multi-select for tests
+                selected_tests = st.multiselect(
+                    label='🔬 Medical Test Types *',
+                    options=list(TEST_PRICES.keys()),
+                    help='Select one or more medical tests to be performed',
+                    key="test_types",
+                    placeholder="Select tests..."
+                )
                 
-                with col1:
-                    test_name = st.selectbox(
-                        label='🔬 Medical Test Type *',
-                        options=list(TEST_PRICES.keys()),
-                        help='Select the type of medical test to be performed',
-                        key="test_type"
-                    )
-                
-                with col2:
-                    test_price = st.text_input(
-                        label='💰 Test Price',
-                        disabled=True,
-                        value=f"₹{TEST_PRICES[test_name]:,}",
-                        help="Automatically calculated based on test type"
-                    )
-                
-                with col3:
-                    st.metric(
-                        label="Price",
-                        value=f"₹{TEST_PRICES[test_name]:,}",
-                        help="Test price in Indian Rupees"
-                    )
+                if selected_tests:
+                    st.success(f"✅ {len(selected_tests)} test(s) selected")
+                else:
+                    st.info("💡 Please select at least one medical test")
             
             # PAYMENT INFORMATION SECTION
             with st.expander("💳 Payment Information", expanded=True):
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.markdown("**Payment Amount**")
-                    payment_amount = st.number_input(
-                        label='Payment Amount (₹) *',
-                        min_value=0,
-                        max_value=10000,
-                        step=50,
-                        value=0,
-                        help='💰 Enter the payment amount received',
-                        key="payment_amount"
-                    )
+                if not selected_tests:
+                    st.info("💡 Please select medical tests first to enter payment details")
+                    # Initialize empty values for when no tests are selected
+                    test_payments = {}
+                    total_payment = 0
+                    total_test_price = 0
+                    total_discount = 0
+                else:
+                    st.markdown("**Payment per Test** (Enter amount paid for each test)")
                     
-                    # Show payment status
-                    if payment_amount > 0:
-                        test_price_num = TEST_PRICES[test_name]
-                        if payment_amount >= test_price_num:
-                            st.success(f"✅ Full payment received (₹{payment_amount:,})")
+                    # Calculate total price for selected tests
+                    total_test_price = sum(TEST_PRICES[test] for test in selected_tests)
+                    
+                    # Create payment input for each selected test
+                    test_payments = {}
+                    for test in selected_tests:
+                        test_price = TEST_PRICES[test]
+                        col1, col2, col3 = st.columns([3, 2, 1])
+                        
+                        with col1:
+                            st.markdown(f"**{test}**")
+                            st.caption(f"Price: ₹{test_price:,}")
+                        
+                        with col2:
+                            payment_key = f"payment_{test.replace(' ', '_').replace('/', '_').replace('-', '_')}"
+                            test_payment = st.number_input(
+                                label=f"Amount for {test}",
+                                min_value=0,
+                                max_value=test_price,
+                                step=10,
+                                value=test_price,  # Default to full price
+                                help=f'Enter amount paid for {test} (max ₹{test_price:,})',
+                                key=payment_key,
+                                label_visibility="collapsed"
+                            )
+                            test_payments[test] = test_payment
+                        
+                        with col3:
+                            discount = test_price - test_payment
+                            if discount > 0:
+                                st.markdown(f"<span style='color: #dc3545;'>-₹{discount:,}</span>", unsafe_allow_html=True)
+                            else:
+                                st.markdown("✅")
+                    
+                    # Calculate totals
+                    total_payment = sum(test_payments.values())
+                    total_discount = total_test_price - total_payment
+                    
+                    # Show summary
+                    st.markdown("---")
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        st.markdown("**Total Price:**")
+                    with col2:
+                        st.markdown(f"₹{total_test_price:,}")
+                    
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        st.markdown("**Total Payment:**")
+                    with col2:
+                        st.markdown(f"<span style='color: #28a745; font-weight: 800;'>₹{total_payment:,}</span>", unsafe_allow_html=True)
+                    
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        st.markdown("**Total Discount:**")
+                    with col2:
+                        if total_discount > 0:
+                            st.markdown(f"<span style='color: #dc3545; font-weight: 600;'>₹{total_discount:,}</span>", unsafe_allow_html=True)
                         else:
-                            remaining = test_price_num - payment_amount
-                            st.warning(f"⚠️ Partial payment. Discount: ₹{remaining:,}")
-                    else:
-                        st.info("💡 Please enter the payment amount")
+                            st.markdown("₹0")
                 
-                with col2:
-                    st.markdown("**Additional Notes**")
-                    comments = st.text_area(
-                        label='Comments/Notes',
-                        placeholder="Any additional notes or comments...",
-                        help='📝 Enter any relevant comments about the test or patient',
-                        height=100,
-                        key="comments"
-                    )
+                # Comments section
+                st.markdown("---")
+                st.markdown("**Additional Notes**")
+                comments = st.text_area(
+                    label='Comments/Notes',
+                    placeholder="Any additional notes or comments...",
+                    help='📝 Enter any relevant comments about the test or patient',
+                    height=100,
+                    key="comments"
+                )
             
             st.markdown("---")
             
@@ -498,7 +545,9 @@ class MedicalRecordForm:
                 can_submit = (
                     patient_name and 
                     len(patient_name.strip()) >= 2 and
-                    payment_amount > 0 and
+                    selected_tests and  # At least one test selected
+                    len(selected_tests) > 0 and
+                    total_payment > 0 and
                     not st.session_state.processing_submission  # Disable while processing
                 )
                 
@@ -525,7 +574,7 @@ class MedicalRecordForm:
             
             # Show required fields reminder
             if not can_submit:
-                st.info("📋 **Required fields:** Patient Name, Payment Amount" + 
+                st.info("📋 **Required fields:** Patient Name, At least one Medical Test, Payment > 0" + 
                        (" + Doctor Details (if referral selected)" if through_referral else "") +
                        (" + Valid Phone Number (if phone selected)" if phone_available else ""))
         
@@ -550,13 +599,19 @@ class MedicalRecordForm:
                             location=doctor_location.strip()
                         )
                     
+                    # Create list of medical tests with actual paid prices
+                    medical_tests_list = [
+                        MedicalTest(name=test_name, price=test_payments.get(test_name, TEST_PRICES[test_name]))
+                        for test_name in selected_tests
+                    ]
+                    
                     # Create medical record
                     medical_entry = MedicalRecord(
                         patient=patient,
                         doctor=referring_doctor,
-                        medical_test=MedicalTest(name=test_name, price=TEST_PRICES[test_name]),
-                        payment=Payment(amount=payment_amount),
-                        date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        medical_tests=medical_tests_list,
+                        payment=Payment(amount=total_payment),
+                        date=get_ist_now_str(),
                         comments=comments.strip() if comments else "",
                         updated_by=st.session_state.user_role,
                         updated_by_email=st.session_state.user_email
@@ -975,7 +1030,7 @@ class ExpenseForm:
                             expense_type=expense_type,
                             amount=int(expense_amount),
                             description=expense_description.strip(),
-                            date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            date=get_ist_now_str(),
                             updated_by=st.session_state.user_role,
                             updated_by_email=st.session_state.user_email
                         )
@@ -1291,7 +1346,7 @@ class OpeningScreen:
                                         update_data = {
                                             "status": new_status,
                                             "updated_by": st.session_state.user_email,
-                                            "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                            "updated_at": get_ist_now_str()
                                         }
                                         # Only update role if owner
                                         if is_owner:
@@ -1348,7 +1403,7 @@ class OpeningScreen:
                                         update_data = {
                                             "status": "approved",
                                             "approved_by": st.session_state.user_email,
-                                            "approved_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                            "approved_at": get_ist_now_str()
                                         }
                                         self.db.update_doc(USER_DB_COLLECTION, doc_id, update_data)
                                         
@@ -1368,7 +1423,7 @@ class OpeningScreen:
                                         update_data = {
                                             "status": "rejected",
                                             "rejected_by": st.session_state.user_email,
-                                            "rejected_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                            "rejected_at": get_ist_now_str()
                                         }
                                         self.db.update_doc(USER_DB_COLLECTION, doc_id, update_data)
                                         
@@ -1418,7 +1473,7 @@ class OpeningScreen:
                                         update_data = {
                                             "status": "approved",
                                             "approved_by": st.session_state.user_email,
-                                            "approved_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                            "approved_at": get_ist_now_str()
                                         }
                                         self.db.update_doc(USER_DB_COLLECTION, doc_id, update_data)
                                         
@@ -1497,7 +1552,7 @@ class PrimeLabsUI:
                         # Medical form keys
                         'patient_name', 'patient_phone', 'patient_address',
                         'phone_checkbox', 'address_checkbox', 'referral_checkbox',
-                        'doctor_name', 'doctor_location', 'test_type', 'payment_amount',
+                        'doctor_name', 'doctor_location', 'test_type', 'test_types', 'payment_amount',
                         'comments', 'form_errors', 'processing_submission', 
                         'show_success', 'last_record',
                         # Expense form keys
