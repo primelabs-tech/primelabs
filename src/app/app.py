@@ -665,9 +665,11 @@ class MedicalRecordForm:
                     )
                     
                     # Save to database
+                    # Use model_dump() without mode="json" to preserve datetime objects
+                    # Firestore will automatically convert them to proper Timestamps
                     db.create_doc(
                         self.database_collection, 
-                        medical_entry.model_dump(mode="json")
+                        medical_entry.model_dump()
                     )
                 
                 # Set success state and record for display
@@ -1090,9 +1092,11 @@ class ExpenseForm:
                     max_retries = 3
                     for attempt in range(max_retries):
                         try:
+                            # Use model_dump() without mode="json" to preserve datetime objects
+                            # Firestore will automatically convert them to proper Timestamps
                             db.create_doc(
                                 self.database_collection, 
-                                expense_entry.model_dump(mode="json")
+                                expense_entry.model_dump()
                             )
                             break  # Success, exit retry loop
                         except Exception as db_error:
