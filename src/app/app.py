@@ -435,7 +435,24 @@ class MedicalRecordForm:
                     "USG NECK/THYROID USG": 1200,
                     "USG LOCAL REGION USG": 1200,
                     "USG Follicular Study": 1200,
-                    "ECG": 300
+                    "ECG": 300,
+
+                    "HCV RNA": 3600,
+                    "Hep-B DNA": 3500,
+                    "Serum IPTH": 1700,
+                    "TTG": 1500,
+                    "Blood Culture (BDLS)": 1500,
+                    "Urine Culture (VDLS)": 1200,
+                    "Stool Occult Blood Test (SOBT)": 500,
+                    "FSH, LH": 1000,
+                    "Serum TPO": 1300,
+                    "NTCCP": 1700,
+                    "Alpha Fetoprotein (α-FP)": 1000,
+                    "Serum Iron": 700,
+                    "Serum Ferritin": 900,
+                    "CSF": 2000,
+                    "CBNAA SPOT": 500,
+                    "CBNAA": 3000,
                 }
                 
                 # Multi-select for tests
