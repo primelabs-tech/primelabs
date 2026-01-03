@@ -101,17 +101,20 @@ class MedicalRecord(DatabaseRecord):
         return "<br>".join(lines)
 
 
-class ExpenseType(StrEnum):
+class ExpenseType(StrEnum): 
+    CHAI_NASHTA = "Chai Nashta"
+    PETROL_DIESEL = "Petrol/Diesel"
     RENT = "Rent"
     ELECTRICITY = "Electricity"
     INTERNET = "Internet"
-    OTHER = "Other"
-    DOCTOR_FEES = "Doctor Fees"
-    STAFF_EXPENSE = "Staff Expense"
-    EQUIPMENT = "Equipment"
-    SALARY = "Salary"
-    STATIONARY = "Stationary"
-    CHAI_NASHTA = "Chai Nashta"
+    STAFF_SALARY = "Staff Salary"
+    DOCTOR_CUT = "Doctor Cut"
+    MACHINE_REPAIR = "Machine Repair"
+    MACHINE_INSTALL = "Machine Install"
+    STATIONARY = "Paper/Stationary"
+    THYROCARE = "Thyrocare"
+    STAFF_EXPENSE = "Staff Kharcha - add comment"    
+    OTHER = "Other Expense - add comment"
 
 
 class ExpenseRecord(DatabaseRecord):

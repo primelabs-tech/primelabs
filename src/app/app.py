@@ -435,7 +435,24 @@ class MedicalRecordForm:
                     "USG NECK/THYROID USG": 1200,
                     "USG LOCAL REGION USG": 1200,
                     "USG Follicular Study": 1200,
-                    "ECG": 300
+                    "ECG": 300,
+
+                    "HCV RNA": 3600,
+                    "Hep-B DNA": 3500,
+                    "Serum IPTH": 1700,
+                    "TTG": 1500,
+                    "Blood Culture (BDLS)": 1500,
+                    "Urine Culture (VDLS)": 1200,
+                    "Stool Occult Blood Test (SOBT)": 500,
+                    "FSH, LH": 1000,
+                    "Serum TPO": 1300,
+                    "NTCCP": 1700,
+                    "Alpha Fetoprotein (α-FP)": 1000,
+                    "Serum Iron": 700,
+                    "Serum Ferritin": 900,
+                    "CSF": 2000,
+                    "CBNAA SPOT": 500,
+                    "CBNAA": 3000,
                 }
                 
                 # Multi-select for tests
@@ -454,6 +471,9 @@ class MedicalRecordForm:
             
             # PAYMENT INFORMATION SECTION
             with st.expander("💳 Payment Information", expanded=True):
+                # Initialize free_test_reason before conditional blocks
+                free_test_reason = None
+                
                 if not selected_tests:
                     st.info("💡 Please select medical tests first to enter payment details")
                     # Initialize empty values for when no tests are selected
@@ -524,6 +544,17 @@ class MedicalRecordForm:
                             st.markdown(f"<span style='color: #dc3545; font-weight: 600;'>₹{total_discount:,}</span>", unsafe_allow_html=True)
                         else:
                             st.markdown("₹0")
+                    
+                    # Free test reason - shown only when total payment is 0
+                    if total_payment == 0:
+                        st.markdown("---")
+                        st.warning("⚠️ **Free Test** - Please select a reason for waiving payment:")
+                        free_test_reason = st.selectbox(
+                            label="Reason for free test",
+                            options=["-- Select Reason --", "Zaruratmand", "Friend/Family/Staff"],
+                            key="free_test_reason",
+                            help="Select why this test is being provided for free"
+                        )
                 
                 # Comments section
                 st.markdown("---")
@@ -541,13 +572,19 @@ class MedicalRecordForm:
             # FORM SUBMISSION
             col1, col2, col3 = st.columns([1, 2, 1])
             with col2:
+                # Check if free test reason is valid (when payment is 0)
+                free_test_valid = (
+                    total_payment > 0 or 
+                    (free_test_reason and free_test_reason != "-- Select Reason --")
+                )
+                
                 # Validate required fields before enabling submit
                 can_submit = (
                     patient_name and 
                     len(patient_name.strip()) >= 2 and
                     selected_tests and  # At least one test selected
                     len(selected_tests) > 0 and
-                    total_payment > 0 and
+                    free_test_valid and  # Either payment > 0 or valid free test reason
                     not st.session_state.processing_submission  # Disable while processing
                 )
                 
@@ -574,7 +611,8 @@ class MedicalRecordForm:
             
             # Show required fields reminder
             if not can_submit:
-                st.info("📋 **Required fields:** Patient Name, At least one Medical Test, Payment > 0" + 
+                payment_requirement = "Payment > 0 (or select free test reason)" if total_payment == 0 else "Payment > 0"
+                st.info("📋 **Required fields:** Patient Name, At least one Medical Test, " + payment_requirement + 
                        (" + Doctor Details (if referral selected)" if through_referral else "") +
                        (" + Valid Phone Number (if phone selected)" if phone_available else ""))
         
@@ -605,6 +643,12 @@ class MedicalRecordForm:
                         for test_name in selected_tests
                     ]
                     
+                    # Build comments - include free test reason if applicable
+                    final_comments = comments.strip() if comments else ""
+                    if total_payment == 0 and free_test_reason and free_test_reason != "-- Select Reason --":
+                        free_test_note = f"[FREE TEST: {free_test_reason}]"
+                        final_comments = f"{free_test_note} {final_comments}".strip()
+                    
                     # Create medical record
                     medical_entry = MedicalRecord(
                         patient=patient,
@@ -612,7 +656,7 @@ class MedicalRecordForm:
                         medical_tests=medical_tests_list,
                         payment=Payment(amount=total_payment),
                         date=get_ist_now_str(),
-                        comments=comments.strip() if comments else "",
+                        comments=final_comments,
                         updated_by=st.session_state.user_role,
                         updated_by_email=st.session_state.user_email
                     )

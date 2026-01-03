@@ -225,14 +225,6 @@ def generate_medical_record_pdf(record: MedicalRecord) -> bytes:
     
     pdf.ln(4)
     
-    # ===== COMMENTS SECTION =====
-    if record.comments:
-        pdf.set_font('Helvetica', 'B', 10)
-        pdf.cell(0, 6, 'Additional Comments', 0, 1)
-        pdf.set_font('Helvetica', '', 9)
-        pdf.multi_cell(0, 5, record.comments)
-        pdf.ln(4)
-    
     # ===== FOOTER INFORMATION =====
     pdf.ln(3)
     pdf.set_font('Helvetica', 'I', 8)
