@@ -23,6 +23,7 @@ from utils import (
     is_project_owner,
     get_ist_now,
     get_ist_now_str,
+    format_datetime_for_display,
 )
 from logger import logger
 
@@ -657,7 +658,7 @@ class MedicalRecordForm:
                         doctor=referring_doctor,
                         medical_tests=medical_tests_list,
                         payment=Payment(amount=total_payment),
-                        date=get_ist_now_str(),
+                        date=get_ist_now(),  # Use datetime object for proper Firestore timestamp
                         comments=final_comments,
                         updated_by=st.session_state.user_role,
                         updated_by_email=st.session_state.user_email
@@ -760,11 +761,13 @@ class ExpenseForm:
     def show_recent_expenses(self, limit=5):
         """Show recent expenses for context"""
         try:
-            # Get recent expenses
-            recent_expenses = db.query_collection(
+            # Get recent expenses with proper ordering by date
+            recent_expenses = db.get_docs(
                 self.database_collection,
                 filters=[],
-                limit=limit
+                limit=limit,
+                order_by="date",
+                order_direction="DESCENDING"
             )
             
             if recent_expenses:
@@ -1076,7 +1079,7 @@ class ExpenseForm:
                             expense_type=expense_type,
                             amount=int(expense_amount),
                             description=expense_description.strip(),
-                            date=get_ist_now_str(),
+                            date=get_ist_now(),  # Use datetime object for proper Firestore timestamp
                             updated_by=st.session_state.user_role,
                             updated_by_email=st.session_state.user_email
                         )
@@ -1547,25 +1550,15 @@ class DailyReportPage:
         end_of_day = today.replace(hour=23, minute=59, second=59, microsecond=999999)
         return start_of_day, end_of_day
     
-    def get_today_date_str(self):
-        """Get today's date as string in the format used by database"""
-        today = get_ist_now()
-        return today.strftime("%Y-%m-%d")
-    
     def fetch_daily_collections(self):
-        """Fetch all medical records for today and calculate total collection"""
-        today_str = self.get_today_date_str()
-        
+        """Fetch all medical records for today using server-side date filtering"""
         try:
-            # Query all records - we'll filter by date string prefix
-            all_records = db.get_docs(self.medical_collection, limit=500)
-            
-            # Filter records for today
-            today_records = []
-            for record in all_records:
-                record_date = record.get('date', '')
-                if isinstance(record_date, str) and record_date.startswith(today_str):
-                    today_records.append(record)
+            # Use server-side date filtering for efficiency at scale
+            today_records = db.get_today_docs(
+                collection=self.medical_collection,
+                date_field="date",
+                limit=1000
+            )
             
             # Calculate total collection
             total_collection = 0
@@ -1583,19 +1576,14 @@ class DailyReportPage:
             return [], 0
     
     def fetch_daily_expenses(self):
-        """Fetch all expenses for today and calculate total expenses"""
-        today_str = self.get_today_date_str()
-        
+        """Fetch all expenses for today using server-side date filtering"""
         try:
-            # Query all expenses - we'll filter by date string prefix
-            all_expenses = db.get_docs(self.expense_collection, limit=500)
-            
-            # Filter expenses for today
-            today_expenses = []
-            for expense in all_expenses:
-                expense_date = expense.get('date', '')
-                if isinstance(expense_date, str) and expense_date.startswith(today_str):
-                    today_expenses.append(expense)
+            # Use server-side date filtering for efficiency at scale
+            today_expenses = db.get_today_docs(
+                collection=self.expense_collection,
+                date_field="date",
+                limit=1000
+            )
             
             # Calculate total expenses
             total_expenses = 0
@@ -1655,15 +1643,8 @@ class DailyReportPage:
                         amount = payment.get('amount', 0) if isinstance(payment, dict) else 0
                         record_date = record.get('date', '')
                         
-                        # Extract time from date string
-                        try:
-                            if isinstance(record_date, str):
-                                dt = datetime.strptime(record_date, "%Y-%m-%d %H:%M:%S")
-                                time_str = dt.strftime("%I:%M %p")
-                            else:
-                                time_str = "N/A"
-                        except:
-                            time_str = "N/A"
+                        # Extract time using helper that handles both datetime and string formats
+                        _, time_str = format_datetime_for_display(record_date)
                         
                         st.markdown(f"**{i+1}. {patient_name}** - ₹{amount:,} ({time_str})")
                         
@@ -1701,15 +1682,8 @@ class DailyReportPage:
                         description = expense.get('description', '')
                         expense_date = expense.get('date', '')
                         
-                        # Extract time from date string
-                        try:
-                            if isinstance(expense_date, str):
-                                dt = datetime.strptime(expense_date, "%Y-%m-%d %H:%M:%S")
-                                time_str = dt.strftime("%I:%M %p")
-                            else:
-                                time_str = "N/A"
-                        except:
-                            time_str = "N/A"
+                        # Extract time using helper that handles both datetime and string formats
+                        _, time_str = format_datetime_for_display(expense_date)
                         
                         st.markdown(f"**{i+1}. {expense_type}** - ₹{amount:,} ({time_str})")
                         if description:
