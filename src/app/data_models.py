@@ -109,12 +109,35 @@ class ExpenseType(StrEnum):
     INTERNET = "Internet"
     STAFF_SALARY = "Staff Salary"
     DOCTOR_CUT = "Doctor Cut"
+    DOCTOR_FEES = "Doctor Fees"
     MACHINE_REPAIR = "Machine Repair"
     MACHINE_INSTALL = "Machine Install"
-    STATIONARY = "Paper/Stationary"
+    MACHINE_COST = "Machine Cost"
+    PAPER_STATIONARY = "Paper/Stationary"
     THYROCARE = "Thyrocare"
-    STAFF_EXPENSE = "Staff Kharcha - add comment"    
-    OTHER = "Other Expense - add comment"
+    STAFF_EXPENSE = "Staff Kharcha"
+    SALARY = "Salary"
+    OTHER = "Other Expense"
+
+
+EXPENSE_DESCRIPTIONS = {
+    ExpenseType.CHAI_NASHTA: "Tea, snacks and refreshments",
+    ExpenseType.PETROL_DIESEL: "Fuel expenses",
+    ExpenseType.RENT: "Monthly office/clinic rent payments",
+    ExpenseType.ELECTRICITY: "Electricity and utility bills",
+    ExpenseType.INTERNET: "Internet and communication expenses",
+    ExpenseType.STAFF_SALARY: "Staff salary payments",
+    ExpenseType.DOCTOR_CUT: "Doctor referral cut payments",
+    ExpenseType.DOCTOR_FEES: "Doctor consultation and professional fees",
+    ExpenseType.MACHINE_REPAIR: "Machine repair costs",
+    ExpenseType.MACHINE_INSTALL: "Machine installation costs",
+    ExpenseType.MACHINE_COST: "Cost of buying a new machine",
+    ExpenseType.PAPER_STATIONARY: "Office supplies and stationery",
+    ExpenseType.THYROCARE: "Thyrocare related expenses",
+    ExpenseType.STAFF_EXPENSE: "Staff-related expenses (excluding salary)",
+    ExpenseType.SALARY: "Staff salary payments",
+    ExpenseType.OTHER: "Other miscellaneous expenses",
+}
 
 
 class ExpenseRecord(DatabaseRecord):

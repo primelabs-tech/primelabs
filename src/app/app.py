@@ -14,6 +14,7 @@ from data_models import (
     AuthorizationStatus,
     ExpenseRecord,
     ExpenseType,
+    EXPENSE_DESCRIPTIONS,
 )
 from user_authentication import UserAuthentication
 from utils import (
@@ -922,20 +923,7 @@ class ExpenseForm:
                 )
                 
                 # Show expense type description
-                expense_descriptions = {
-                    ExpenseType.RENT: "Monthly office/clinic rent payments",
-                    ExpenseType.ELECTRICITY: "Electricity and utility bills",
-                    ExpenseType.INTERNET: "Internet and communication expenses",
-                    ExpenseType.DOCTOR_FEES: "Doctor consultation and professional fees",
-                    ExpenseType.STAFF_EXPENSE: "Staff-related expenses (excluding salary)",
-                    ExpenseType.EQUIPMENT: "Medical equipment and machinery costs",
-                    ExpenseType.SALARY: "Staff salary payments",
-                    ExpenseType.STATIONARY: "Office supplies and stationery",
-                    ExpenseType.CHAI_NASHTA: "Tea, snacks and refreshments",
-                    ExpenseType.OTHER: "Other miscellaneous expenses"
-                }
-                
-                st.info(f"💡 {expense_descriptions.get(expense_type, 'General expense category')}")
+                st.info(f"💡 {EXPENSE_DESCRIPTIONS.get(expense_type, 'General expense category')}")
             
             # AMOUNT SECTION
             with st.expander("💵 Amount Details", expanded=True):
