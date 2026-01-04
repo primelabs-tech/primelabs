@@ -1013,11 +1013,15 @@ class ExpenseForm:
             col1, col2, col3 = st.columns([1, 2, 1])
             with col2:
                 # Validate required fields before enabling submit
+                # Description is only required for OTHER expense type
+                description_valid = (
+                    expense_type != ExpenseType.OTHER or 
+                    (expense_description and len(expense_description.strip()) >= 3)
+                )
                 can_submit = (
                     expense_amount and 
                     expense_amount > 0 and
-                    expense_description and
-                    len(expense_description.strip()) >= 3 and
+                    description_valid and
                     not st.session_state.expense_processing_submission  # Disable while processing
                 )
                 
@@ -1039,7 +1043,7 @@ class ExpenseForm:
             
             # Show required fields reminder
             if not can_submit:
-                st.info("📋 **Required fields:** Expense Type, Amount (>0), Description (min 3 characters)")
+                st.info("📋 **Required fields:** Expense Type, Amount (>0). Description required for 'Other Expense'.")
         
         # RECENT EXPENSES SECTION (before form submission logic)
         st.markdown("---")
