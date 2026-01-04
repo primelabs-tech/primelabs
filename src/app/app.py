@@ -707,9 +707,15 @@ class ExpenseForm:
     
     def validate_description(self, description, expense_type):
         """Validate description based on expense type"""
-        if not description or len(description.strip()) < 3:
-            return False, "Description must be at least 3 characters"
-        if len(description.strip()) > 500:
+        # Description is required for OTHER expense type
+        if expense_type == ExpenseType.OTHER:
+            if not description or len(description.strip()) < 3:
+                return False, "Description is required for 'Other Expense' (at least 3 characters)"
+        # For other expense types, description is optional but must be valid if provided
+        elif description and len(description.strip()) > 0:
+            if len(description.strip()) < 3:
+                return False, "Description must be at least 3 characters if provided"
+        if description and len(description.strip()) > 500:
             return False, "Description cannot exceed 500 characters"
         return True, ""
     
