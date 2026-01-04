@@ -1194,11 +1194,10 @@ class OpeningScreen:
         email = st.text_input("Email")
         password = st.text_input("Password", type="password")
         
-        if st.button("Sign In"):
-            if not email or not password:
-                st.show_error_message("MISSING_FIELDS")
-                return
-            
+        # Disable button when fields are empty
+        fields_filled = bool(email and password)
+        
+        if st.button("Sign In", disabled=not fields_filled):
             is_logged_in, error_message = self.user_auth.login(email, password)
             if is_logged_in:
                 st.success("Login successful!")
@@ -1919,23 +1918,28 @@ class PrimeLabsUI:
         current_page = st.session_state.get('current_page', 'Medical Records')
         
         # Render the appropriate page based on selection
-        if is_authenticated and is_authorized:
-            if current_page == "Medical Records":
+        try:
+            if is_authenticated and is_authorized:
+                if current_page == "Medical Records":
+                    MedicalRecordForm().render(is_authorized)
+                elif current_page == "Expenses":
+                    ExpenseForm().render(is_authorized)
+                elif current_page == "Daily Report":
+                    DailyReportPage().render(is_authorized)
+                elif current_page == "Admin":
+                    # Show admin page only to project owners and Admin role users
+                    if (is_project_owner(st.session_state.user_email) or 
+                        st.session_state.user_role == UserRole.ADMIN.value):
+                        self.opening_screen.show_admin_user_management()
+                    else:
+                        st.error("❌ Access denied. Admin page is only accessible to users with Admin role.")
+            else:
+                # Show medical records form by default for unauthorized users (they'll see the warning)
                 MedicalRecordForm().render(is_authorized)
-            elif current_page == "Expenses":
-                ExpenseForm().render(is_authorized)
-            elif current_page == "Daily Report":
-                DailyReportPage().render(is_authorized)
-            elif current_page == "Admin":
-                # Show admin page only to project owners and Admin role users
-                if (is_project_owner(st.session_state.user_email) or 
-                    st.session_state.user_role == UserRole.ADMIN.value):
-                    self.opening_screen.show_admin_user_management()
-                else:
-                    st.error("❌ Access denied. Admin page is only accessible to users with Admin role.")
-        else:
-            # Show medical records form by default for unauthorized users (they'll see the warning)
-            MedicalRecordForm().render(is_authorized)
+        except Exception as e:
+            logger.error(f"Unexpected error rendering page '{current_page}': {str(e)}", exc_info=True)
+            st.error("⚠️ **Something went wrong**")
+            st.info("An unexpected error occurred. Please try refreshing the page. If the problem persists, contact the system administrator.")
 
 
 if __name__ == '__main__':
