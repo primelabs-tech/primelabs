@@ -391,15 +391,16 @@ class MedicalRecordForm:
                     "X-RAY HIP-AP": 350,
                     "X-RAY HIP-AP/LAT": 650,
                     "X-RAY BOTH HIP-AP/LAT": 1200,
-                    "X-RAY KNEE-AP/LAT": 400,
+                    "X-RAY KNEE-AP/LAT": 450,
                     "X-RAY BOTH KNEE-AP/LAT": 800,
                     "X-RAY ANKLE-AP/LAT": 400,
                     "X-RAY BOTH ANKLE-AP/LAT": 800,
-                    "X-RAY FOOT-AP/OBLIQUE": 400,
+                    "X-RAY FOOT-AP/LAT": 450,
+                    "X-RAY FOOT-AP/OBLIQUE": 450,
                     "X-RAY BOTH FOOT-AP/OBL": 800,
                     "X-RAY LEG-AP/LAT": 400,
                     "X-RAY BOTH LEG-AP/LAT": 800,
-                    "X-RAY WRIST-AP/LAT": 400,
+                    "X-RAY WRIST-AP/LAT": 450,
                     "X-RAY BOTH WRIST-AP/LAT": 800,
                     "X-RAY FINGER-AP/LAT": 400,
                     "X-RAY BOTH FINGER-AP/OBL": 800,
@@ -453,6 +454,7 @@ class MedicalRecordForm:
                     "CSF": 2000,
                     "CBNAA SPOT": 500,
                     "CBNAA": 3000,
+                    "OBS": 750,
                 }
                 
                 # Multi-select for tests
