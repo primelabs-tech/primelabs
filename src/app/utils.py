@@ -119,6 +119,82 @@ def format_date_time(date_value) -> str:
         return str(date_value)
 
 
+def format_datetime_for_display(date_value) -> tuple[str, str]:
+    """
+    Format a datetime value for display, handling both datetime objects 
+    and legacy string formats.
+    
+    Args:
+        date_value: Date as string, datetime object, or Firestore Timestamp
+        
+    Returns:
+        Tuple of (formatted_date_string, time_string)
+    """
+    try:
+        # Handle Firestore Timestamp objects
+        if hasattr(date_value, 'timestamp'):
+            # Convert Firestore Timestamp to datetime
+            dt = datetime.fromtimestamp(date_value.timestamp(), tz=IST)
+        elif isinstance(date_value, datetime):
+            # Already a datetime object
+            if date_value.tzinfo is None:
+                # Assume IST if no timezone
+                dt = date_value.replace(tzinfo=IST)
+            else:
+                dt = date_value.astimezone(IST)
+        elif isinstance(date_value, str):
+            # Legacy string format - parse it
+            for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%d/%m/%Y %H:%M:%S"]:
+                try:
+                    dt = datetime.strptime(date_value, fmt)
+                    dt = dt.replace(tzinfo=IST)
+                    break
+                except ValueError:
+                    continue
+            else:
+                return str(date_value), "N/A"
+        else:
+            return str(date_value), "N/A"
+        
+        # Format for display
+        date_str = dt.strftime("%d/%m/%Y")
+        time_str = dt.strftime("%I:%M %p")
+        return date_str, time_str
+        
+    except Exception:
+        return str(date_value), "N/A"
+
+
+def parse_date_value(date_value) -> datetime:
+    """
+    Parse a date value from various formats into a datetime object.
+    
+    Args:
+        date_value: Date as string, datetime object, or Firestore Timestamp
+        
+    Returns:
+        datetime object in IST timezone
+    """
+    try:
+        # Handle Firestore Timestamp objects
+        if hasattr(date_value, 'timestamp'):
+            return datetime.fromtimestamp(date_value.timestamp(), tz=IST)
+        elif isinstance(date_value, datetime):
+            if date_value.tzinfo is None:
+                return date_value.replace(tzinfo=IST)
+            return date_value.astimezone(IST)
+        elif isinstance(date_value, str):
+            for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%d/%m/%Y %H:%M:%S"]:
+                try:
+                    dt = datetime.strptime(date_value, fmt)
+                    return dt.replace(tzinfo=IST)
+                except ValueError:
+                    continue
+        return None
+    except Exception:
+        return None
+
+
 def generate_medical_record_pdf(record: MedicalRecord) -> bytes:
     """Generate a PDF document from a medical record.
     
@@ -224,14 +300,6 @@ def generate_medical_record_pdf(record: MedicalRecord) -> bytes:
     pdf.cell(0, 5, f'Amount Paid: Rs. {record.payment.amount:,}', 0, 1)
     
     pdf.ln(4)
-    
-    # ===== COMMENTS SECTION =====
-    if record.comments:
-        pdf.set_font('Helvetica', 'B', 10)
-        pdf.cell(0, 6, 'Additional Comments', 0, 1)
-        pdf.set_font('Helvetica', '', 9)
-        pdf.multi_cell(0, 5, record.comments)
-        pdf.ln(4)
     
     # ===== FOOTER INFORMATION =====
     pdf.ln(3)
