@@ -14,6 +14,7 @@ from data_models import (
     AuthorizationStatus,
     ExpenseRecord,
     ExpenseType,
+    EXPENSE_DESCRIPTIONS,
 )
 from user_authentication import UserAuthentication
 from utils import (
@@ -706,9 +707,15 @@ class ExpenseForm:
     
     def validate_description(self, description, expense_type):
         """Validate description based on expense type"""
-        if not description or len(description.strip()) < 3:
-            return False, "Description must be at least 3 characters"
-        if len(description.strip()) > 500:
+        # Description is required for OTHER expense type
+        if expense_type == ExpenseType.OTHER:
+            if not description or len(description.strip()) < 3:
+                return False, "Description is required for 'Other Expense' (at least 3 characters)"
+        # For other expense types, description is optional but must be valid if provided
+        elif description and len(description.strip()) > 0:
+            if len(description.strip()) < 3:
+                return False, "Description must be at least 3 characters if provided"
+        if description and len(description.strip()) > 500:
             return False, "Description cannot exceed 500 characters"
         return True, ""
     
@@ -922,20 +929,7 @@ class ExpenseForm:
                 )
                 
                 # Show expense type description
-                expense_descriptions = {
-                    ExpenseType.RENT: "Monthly office/clinic rent payments",
-                    ExpenseType.ELECTRICITY: "Electricity and utility bills",
-                    ExpenseType.INTERNET: "Internet and communication expenses",
-                    ExpenseType.DOCTOR_FEES: "Doctor consultation and professional fees",
-                    ExpenseType.STAFF_EXPENSE: "Staff-related expenses (excluding salary)",
-                    ExpenseType.EQUIPMENT: "Medical equipment and machinery costs",
-                    ExpenseType.SALARY: "Staff salary payments",
-                    ExpenseType.STATIONARY: "Office supplies and stationery",
-                    ExpenseType.CHAI_NASHTA: "Tea, snacks and refreshments",
-                    ExpenseType.OTHER: "Other miscellaneous expenses"
-                }
-                
-                st.info(f"💡 {expense_descriptions.get(expense_type, 'General expense category')}")
+                st.info(f"💡 {EXPENSE_DESCRIPTIONS.get(expense_type, 'General expense category')}")
             
             # AMOUNT SECTION
             with st.expander("💵 Amount Details", expanded=True):
@@ -990,15 +984,21 @@ class ExpenseForm:
                 # Add predefined suggestions based on expense type
                 if expense_type:
                     suggestions = {
+                        ExpenseType.CHAI_NASHTA: ["Daily refreshments", "Staff lunch arrangement"],
+                        ExpenseType.PETROL_DIESEL: ["Vehicle fuel", "Generator diesel"],
                         ExpenseType.RENT: ["Monthly office rent - [Month/Year]", "Clinic space rental"],
                         ExpenseType.ELECTRICITY: ["Monthly electricity bill", "Generator fuel cost"],
                         ExpenseType.INTERNET: ["Monthly internet bill", "WiFi router purchase"],
+                        ExpenseType.STAFF_SALARY: ["[Name] salary for [Month]", "Overtime payment"],
+                        ExpenseType.DOCTOR_CUT: ["Dr. [Name] referral cut", "Monthly doctor payments"],
                         ExpenseType.DOCTOR_FEES: ["Dr. [Name] consultation fee", "Specialist consultation"],
+                        ExpenseType.MACHINE_REPAIR: ["[Machine name] repair", "Annual maintenance"],
+                        ExpenseType.MACHINE_INSTALL: ["[Machine name] installation", "Setup charges"],
+                        ExpenseType.MACHINE_COST: ["[Machine name] purchase", "New equipment cost"],
+                        ExpenseType.PAPER_STATIONARY: ["Office supplies purchase", "Printer paper and ink"],
+                        ExpenseType.THYROCARE: ["Thyrocare test kits", "Thyrocare supplies"],
                         ExpenseType.STAFF_EXPENSE: ["Staff uniform purchase", "Staff training cost"],
-                        ExpenseType.EQUIPMENT: ["[Equipment name] purchase", "Equipment maintenance"],
-                        ExpenseType.SALARY: ["[Name] salary for [Month]", "Overtime payment"],
-                        ExpenseType.STATIONARY: ["Office supplies purchase", "Printer paper and ink"],
-                        ExpenseType.CHAI_NASHTA: ["Daily refreshments", "Staff lunch arrangement"],
+                        ExpenseType.SALARY: ["[Name] salary for [Month]", "Bonus payment"],
                         ExpenseType.OTHER: ["Miscellaneous expense", "Unexpected cost"]
                     }
                     
@@ -1013,11 +1013,15 @@ class ExpenseForm:
             col1, col2, col3 = st.columns([1, 2, 1])
             with col2:
                 # Validate required fields before enabling submit
+                # Description is only required for OTHER expense type
+                description_valid = (
+                    expense_type != ExpenseType.OTHER or 
+                    (expense_description and len(expense_description.strip()) >= 3)
+                )
                 can_submit = (
                     expense_amount and 
                     expense_amount > 0 and
-                    expense_description and
-                    len(expense_description.strip()) >= 3 and
+                    description_valid and
                     not st.session_state.expense_processing_submission  # Disable while processing
                 )
                 
@@ -1039,7 +1043,7 @@ class ExpenseForm:
             
             # Show required fields reminder
             if not can_submit:
-                st.info("📋 **Required fields:** Expense Type, Amount (>0), Description (min 3 characters)")
+                st.info("📋 **Required fields:** Expense Type, Amount (>0). Description required for 'Other Expense'.")
         
         # RECENT EXPENSES SECTION (before form submission logic)
         st.markdown("---")
