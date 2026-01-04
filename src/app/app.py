@@ -1763,16 +1763,45 @@ class DailyReportPage:
         
         st.markdown("---")
         
-        # Fetch data with loading indicators
+        # Fetch data first for summary
+        with st.spinner("Loading data..."):
+            records, total_collection = self.fetch_daily_collections(target_date)
+            expenses, total_expenses = self.fetch_daily_expenses(target_date)
+        
+        # Summary section at the top - Net Amount in a styled card
+        net_amount = total_collection - total_expenses
+        is_profit = net_amount >= 0
+        
+        # Styled summary card
+        summary_color = "#2ecc71" if is_profit else "#e74c3c"
+        summary_bg = "rgba(46, 204, 113, 0.1)" if is_profit else "rgba(231, 76, 60, 0.1)"
+        status_text = "Money In" if is_profit else "Money Out"
+        status_icon = "💰" if is_profit else "💸"
+        
+        st.markdown(f"""
+        <div style="
+            background: {summary_bg};
+            border: 2px solid {summary_color};
+            border-radius: 10px;
+            padding: 18px 24px;
+            text-align: center;
+        ">
+            <div style="color: #888; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">Today's Balance</div>
+            <div style="color: {summary_color}; font-size: 34px; font-weight: 700;">₹{net_amount:,} <span style="font-size: 15px; font-weight: 500;">{status_icon} {status_text}</span></div>
+            <div style="color: #666; font-size: 12px; margin-top: 6px;">₹{total_collection:,} income · ₹{total_expenses:,} expenses</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("---")
+        
+        # Details in two columns
         col1, col2 = st.columns(2)
         
         with col1:
-            st.markdown("### 💰 Payments")
-            with st.spinner("Loading payments..."):
-                records, total_collection = self.fetch_daily_collections(target_date)
+            st.markdown("### 💰 Income")
             
-            # Display total payment metric
-            collection_label = "Total Payments Today" if (not is_admin or selected_date == today_date) else f"Total Payments ({selected_date.strftime('%d %b %Y')})"
+            # Display total income metric
+            collection_label = "Total Payments Received Today" if (not is_admin or selected_date == today_date) else f"Total Payments Received ({selected_date.strftime('%d %b %Y')})"
             st.metric(
                 label=collection_label,
                 value=f"₹{total_collection:,}",
@@ -1809,8 +1838,6 @@ class DailyReportPage:
         
         with col2:
             st.markdown("### 💸 Expenses")
-            with st.spinner("Loading expenses..."):
-                expenses, total_expenses = self.fetch_daily_expenses(target_date)
             
             # Display total expenses metric
             expense_label = "Total Expenses Today" if (not is_admin or selected_date == today_date) else f"Total Expenses ({selected_date.strftime('%d %b %Y')})"
@@ -1841,35 +1868,6 @@ class DailyReportPage:
                         
                         if i < len(expenses) - 1:
                             st.divider()
-        
-        # Summary section
-        st.markdown("---")
-        st.markdown("### 📈 Daily Summary")
-        
-        net_amount = total_collection - total_expenses
-        
-        summary_col1, summary_col2, summary_col3 = st.columns(3)
-        
-        with summary_col1:
-            st.metric(
-                label="💰 Total Payments",
-                value=f"₹{total_collection:,}"
-            )
-        
-        with summary_col2:
-            st.metric(
-                label="💸 Total Expenses",
-                value=f"₹{total_expenses:,}"
-            )
-        
-        with summary_col3:
-            delta_color = "normal" if net_amount >= 0 else "inverse"
-            st.metric(
-                label="📊 Net Amount",
-                value=f"₹{net_amount:,}",
-                delta=f"{'Profit' if net_amount >= 0 else 'Loss'}",
-                delta_color=delta_color
-            )
         
         # Refresh button
         st.markdown("---")
