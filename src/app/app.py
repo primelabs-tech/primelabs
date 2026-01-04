@@ -1196,7 +1196,7 @@ class OpeningScreen:
         
         if st.button("Sign In"):
             if not email or not password:
-                st.show_error_message("MISSING_FIELDS")
+                self.show_error_message("MISSING_FIELDS")
                 return
             
             is_logged_in, error_message = self.user_auth.login(email, password)
