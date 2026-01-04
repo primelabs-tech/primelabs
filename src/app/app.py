@@ -23,6 +23,7 @@ from utils import (
     is_project_owner,
     get_ist_now,
     get_ist_now_str,
+    format_datetime_for_display,
 )
 from logger import logger
 
@@ -657,16 +658,18 @@ class MedicalRecordForm:
                         doctor=referring_doctor,
                         medical_tests=medical_tests_list,
                         payment=Payment(amount=total_payment),
-                        date=get_ist_now_str(),
+                        date=get_ist_now(),  # Use datetime object for proper Firestore timestamp
                         comments=final_comments,
                         updated_by=st.session_state.user_role,
                         updated_by_email=st.session_state.user_email
                     )
                     
                     # Save to database
+                    # Use model_dump() without mode="json" to preserve datetime objects
+                    # Firestore will automatically convert them to proper Timestamps
                     db.create_doc(
                         self.database_collection, 
-                        medical_entry.model_dump(mode="json")
+                        medical_entry.model_dump()
                     )
                 
                 # Set success state and record for display
@@ -760,11 +763,13 @@ class ExpenseForm:
     def show_recent_expenses(self, limit=5):
         """Show recent expenses for context"""
         try:
-            # Get recent expenses
-            recent_expenses = db.query_collection(
+            # Get recent expenses with proper ordering by date
+            recent_expenses = db.get_docs(
                 self.database_collection,
                 filters=[],
-                limit=limit
+                limit=limit,
+                order_by="date",
+                order_direction="DESCENDING"
             )
             
             if recent_expenses:
@@ -1076,7 +1081,7 @@ class ExpenseForm:
                             expense_type=expense_type,
                             amount=int(expense_amount),
                             description=expense_description.strip(),
-                            date=get_ist_now_str(),
+                            date=get_ist_now(),  # Use datetime object for proper Firestore timestamp
                             updated_by=st.session_state.user_role,
                             updated_by_email=st.session_state.user_email
                         )
@@ -1087,9 +1092,11 @@ class ExpenseForm:
                     max_retries = 3
                     for attempt in range(max_retries):
                         try:
+                            # Use model_dump() without mode="json" to preserve datetime objects
+                            # Firestore will automatically convert them to proper Timestamps
                             db.create_doc(
                                 self.database_collection, 
-                                expense_entry.model_dump(mode="json")
+                                expense_entry.model_dump()
                             )
                             break  # Success, exit retry loop
                         except Exception as db_error:
@@ -1533,6 +1540,199 @@ class OpeningScreen:
         except Exception as e:
             st.error(f"Error loading user management: {str(e)}")
 
+class DailyReportPage:
+    """Daily Report page showing total collections and expenses for the day"""
+    
+    def __init__(self):
+        self.medical_collection = DBCollectionNames(st.secrets["database_collection"]).value
+        self.expense_collection = DBCollectionNames(st.secrets.get("expense_collection", "expenses_dev")).value
+    
+    def get_today_date_range(self):
+        """Get the start and end datetime for today in IST"""
+        today = get_ist_now()
+        start_of_day = today.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_of_day = today.replace(hour=23, minute=59, second=59, microsecond=999999)
+        return start_of_day, end_of_day
+    
+    def fetch_daily_collections(self):
+        """Fetch all medical records for today using server-side date filtering"""
+        try:
+            # Use server-side date filtering for efficiency at scale
+            today_records = db.get_today_docs(
+                collection=self.medical_collection,
+                date_field="date",
+                limit=1000
+            )
+            
+            # Calculate total collection
+            total_collection = 0
+            for record in today_records:
+                payment = record.get('payment', {})
+                if isinstance(payment, dict):
+                    total_collection += payment.get('amount', 0)
+                elif hasattr(payment, 'amount'):
+                    total_collection += payment.amount
+            
+            return today_records, total_collection
+            
+        except Exception as e:
+            logger.error(f"Error fetching daily collections: {str(e)}")
+            return [], 0
+    
+    def fetch_daily_expenses(self):
+        """Fetch all expenses for today using server-side date filtering"""
+        try:
+            # Use server-side date filtering for efficiency at scale
+            today_expenses = db.get_today_docs(
+                collection=self.expense_collection,
+                date_field="date",
+                limit=1000
+            )
+            
+            # Calculate total expenses
+            total_expenses = 0
+            for expense in today_expenses:
+                total_expenses += expense.get('amount', 0)
+            
+            return today_expenses, total_expenses
+            
+        except Exception as e:
+            logger.error(f"Error fetching daily expenses: {str(e)}")
+            return [], 0
+    
+    def render(self, is_authorized: bool = False):
+        if not is_authorized:
+            st.warning("🔐 You need to be logged in and approved to access this page.")
+            return
+        
+        # Header
+        st.markdown("""
+        <div style="text-align: center; padding: 20px 0;">
+            <h1 style="color: #2ecc71; margin-bottom: 10px;">📊 Daily Report</h1>
+            <p style="color: #666; font-size: 16px;">Overview of today's collections and expenses</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Show today's date
+        today = get_ist_now()
+        st.markdown(f"### 📅 {today.strftime('%A, %d %B %Y')}")
+        
+        st.markdown("---")
+        
+        # Fetch data with loading indicators
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("### 💰 Collections")
+            with st.spinner("Loading collections..."):
+                records, total_collection = self.fetch_daily_collections()
+            
+            # Display total collection metric
+            st.metric(
+                label="Total Collection Today",
+                value=f"₹{total_collection:,}",
+                help="Total amount collected from medical records today"
+            )
+            
+            # Show number of records
+            st.info(f"📋 {len(records)} medical record(s) today")
+            
+            # Show breakdown if there are records
+            if records:
+                with st.expander("📄 View Collection Details", expanded=False):
+                    for i, record in enumerate(records):
+                        patient = record.get('patient', {})
+                        payment = record.get('payment', {})
+                        patient_name = patient.get('name', 'Unknown') if isinstance(patient, dict) else 'Unknown'
+                        amount = payment.get('amount', 0) if isinstance(payment, dict) else 0
+                        record_date = record.get('date', '')
+                        
+                        # Extract time using helper that handles both datetime and string formats
+                        _, time_str = format_datetime_for_display(record_date)
+                        
+                        st.markdown(f"**{i+1}. {patient_name}** - ₹{amount:,} ({time_str})")
+                        
+                        # Show tests if available
+                        tests = record.get('medical_tests', [])
+                        if tests:
+                            test_names = [t.get('name', '') for t in tests if isinstance(t, dict)]
+                            if test_names:
+                                st.caption(f"Tests: {', '.join(test_names)}")
+                        
+                        if i < len(records) - 1:
+                            st.divider()
+        
+        with col2:
+            st.markdown("### 💸 Expenses")
+            with st.spinner("Loading expenses..."):
+                expenses, total_expenses = self.fetch_daily_expenses()
+            
+            # Display total expenses metric
+            st.metric(
+                label="Total Expenses Today",
+                value=f"₹{total_expenses:,}",
+                help="Total expenses recorded today"
+            )
+            
+            # Show number of expense records
+            st.info(f"📋 {len(expenses)} expense record(s) today")
+            
+            # Show breakdown if there are expenses
+            if expenses:
+                with st.expander("📄 View Expense Details", expanded=False):
+                    for i, expense in enumerate(expenses):
+                        expense_type = expense.get('expense_type', 'Unknown')
+                        amount = expense.get('amount', 0)
+                        description = expense.get('description', '')
+                        expense_date = expense.get('date', '')
+                        
+                        # Extract time using helper that handles both datetime and string formats
+                        _, time_str = format_datetime_for_display(expense_date)
+                        
+                        st.markdown(f"**{i+1}. {expense_type}** - ₹{amount:,} ({time_str})")
+                        if description:
+                            st.caption(f"Description: {description}")
+                        
+                        if i < len(expenses) - 1:
+                            st.divider()
+        
+        # Summary section
+        st.markdown("---")
+        st.markdown("### 📈 Daily Summary")
+        
+        net_amount = total_collection - total_expenses
+        
+        summary_col1, summary_col2, summary_col3 = st.columns(3)
+        
+        with summary_col1:
+            st.metric(
+                label="💰 Total Collection",
+                value=f"₹{total_collection:,}"
+            )
+        
+        with summary_col2:
+            st.metric(
+                label="💸 Total Expenses",
+                value=f"₹{total_expenses:,}"
+            )
+        
+        with summary_col3:
+            delta_color = "normal" if net_amount >= 0 else "inverse"
+            st.metric(
+                label="📊 Net Amount",
+                value=f"₹{net_amount:,}",
+                delta=f"{'Profit' if net_amount >= 0 else 'Loss'}",
+                delta_color=delta_color
+            )
+        
+        # Refresh button
+        st.markdown("---")
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            if st.button("🔄 Refresh Data", use_container_width=True, key="refresh_daily_report"):
+                st.rerun()
+
+
 class PrimeLabsUI:
     def __init__(self):
         self.user_auth = get_user_authentication()
@@ -1577,7 +1777,7 @@ class PrimeLabsUI:
                     st.session_state.current_page = "Medical Records"
                 
                 # Page selection - include Admin only for project owners and Admin role users
-                page_options = ["Medical Records", "Expenses"]
+                page_options = ["Medical Records", "Expenses", "Daily Report"]
                 # Admin page accessible only to owners and Admin role users
                 if (is_project_owner(st.session_state.user_email) or 
                     st.session_state.user_role == UserRole.ADMIN.value):
@@ -1642,6 +1842,8 @@ class PrimeLabsUI:
                 MedicalRecordForm().render(is_authorized)
             elif current_page == "Expenses":
                 ExpenseForm().render(is_authorized)
+            elif current_page == "Daily Report":
+                DailyReportPage().render(is_authorized)
             elif current_page == "Admin":
                 # Show admin page only to project owners and Admin role users
                 if (is_project_owner(st.session_state.user_email) or 
