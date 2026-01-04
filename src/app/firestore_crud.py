@@ -255,6 +255,45 @@ class FirestoreCRUD:
             order_direction="DESCENDING"
         )
 
+    def get_docs_for_date(
+        self,
+        collection: str,
+        target_date: datetime,
+        date_field: str = "date",
+        additional_filters: List[tuple] = None,
+        limit: int = 1000
+    ) -> List[Dict]:
+        """
+        Get all documents for a specific date (IST timezone).
+        
+        Args:
+            collection: Firestore collection name
+            target_date: The date to fetch documents for (datetime object)
+            date_field: Name of the date field in documents
+            additional_filters: Optional additional filters
+            limit: Maximum number of documents to return
+            
+        Returns:
+            List of documents from the specified date
+        """
+        # Ensure the date is in IST
+        if target_date.tzinfo is None:
+            target_date = target_date.replace(tzinfo=IST)
+        
+        # Get start and end of the target date
+        start_of_day = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_of_day = target_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+        
+        return self.get_docs_by_date_range(
+            collection=collection,
+            start_date=start_of_day,
+            end_date=end_of_day,
+            date_field=date_field,
+            additional_filters=additional_filters,
+            limit=limit,
+            order_direction="DESCENDING"
+        )
+
     # ==================== PAGINATION METHODS ====================
 
     def get_docs_paginated(
