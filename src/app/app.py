@@ -14,6 +14,7 @@ from data_models import (
     AuthorizationStatus,
     ExpenseRecord,
     ExpenseType,
+    EXPENSE_DESCRIPTIONS,
 )
 from user_authentication import UserAuthentication
 from utils import (
@@ -706,9 +707,15 @@ class ExpenseForm:
     
     def validate_description(self, description, expense_type):
         """Validate description based on expense type"""
-        if not description or len(description.strip()) < 3:
-            return False, "Description must be at least 3 characters"
-        if len(description.strip()) > 500:
+        # Description is required for OTHER expense type
+        if expense_type == ExpenseType.OTHER:
+            if not description or len(description.strip()) < 3:
+                return False, "Description is required for 'Other Expense' (at least 3 characters)"
+        # For other expense types, description is optional but must be valid if provided
+        elif description and len(description.strip()) > 0:
+            if len(description.strip()) < 3:
+                return False, "Description must be at least 3 characters if provided"
+        if description and len(description.strip()) > 500:
             return False, "Description cannot exceed 500 characters"
         return True, ""
     
@@ -922,20 +929,7 @@ class ExpenseForm:
                 )
                 
                 # Show expense type description
-                expense_descriptions = {
-                    ExpenseType.RENT: "Monthly office/clinic rent payments",
-                    ExpenseType.ELECTRICITY: "Electricity and utility bills",
-                    ExpenseType.INTERNET: "Internet and communication expenses",
-                    ExpenseType.DOCTOR_FEES: "Doctor consultation and professional fees",
-                    ExpenseType.STAFF_EXPENSE: "Staff-related expenses (excluding salary)",
-                    ExpenseType.EQUIPMENT: "Medical equipment and machinery costs",
-                    ExpenseType.SALARY: "Staff salary payments",
-                    ExpenseType.STATIONARY: "Office supplies and stationery",
-                    ExpenseType.CHAI_NASHTA: "Tea, snacks and refreshments",
-                    ExpenseType.OTHER: "Other miscellaneous expenses"
-                }
-                
-                st.info(f"💡 {expense_descriptions.get(expense_type, 'General expense category')}")
+                st.info(f"💡 {EXPENSE_DESCRIPTIONS.get(expense_type, 'General expense category')}")
             
             # AMOUNT SECTION
             with st.expander("💵 Amount Details", expanded=True):
@@ -990,15 +984,21 @@ class ExpenseForm:
                 # Add predefined suggestions based on expense type
                 if expense_type:
                     suggestions = {
+                        ExpenseType.CHAI_NASHTA: ["Daily refreshments", "Staff lunch arrangement"],
+                        ExpenseType.PETROL_DIESEL: ["Vehicle fuel", "Generator diesel"],
                         ExpenseType.RENT: ["Monthly office rent - [Month/Year]", "Clinic space rental"],
                         ExpenseType.ELECTRICITY: ["Monthly electricity bill", "Generator fuel cost"],
                         ExpenseType.INTERNET: ["Monthly internet bill", "WiFi router purchase"],
+                        ExpenseType.STAFF_SALARY: ["[Name] salary for [Month]", "Overtime payment"],
+                        ExpenseType.DOCTOR_CUT: ["Dr. [Name] referral cut", "Monthly doctor payments"],
                         ExpenseType.DOCTOR_FEES: ["Dr. [Name] consultation fee", "Specialist consultation"],
+                        ExpenseType.MACHINE_REPAIR: ["[Machine name] repair", "Annual maintenance"],
+                        ExpenseType.MACHINE_INSTALL: ["[Machine name] installation", "Setup charges"],
+                        ExpenseType.MACHINE_COST: ["[Machine name] purchase", "New equipment cost"],
+                        ExpenseType.PAPER_STATIONARY: ["Office supplies purchase", "Printer paper and ink"],
+                        ExpenseType.THYROCARE: ["Thyrocare test kits", "Thyrocare supplies"],
                         ExpenseType.STAFF_EXPENSE: ["Staff uniform purchase", "Staff training cost"],
-                        ExpenseType.EQUIPMENT: ["[Equipment name] purchase", "Equipment maintenance"],
-                        ExpenseType.SALARY: ["[Name] salary for [Month]", "Overtime payment"],
-                        ExpenseType.STATIONARY: ["Office supplies purchase", "Printer paper and ink"],
-                        ExpenseType.CHAI_NASHTA: ["Daily refreshments", "Staff lunch arrangement"],
+                        ExpenseType.SALARY: ["[Name] salary for [Month]", "Bonus payment"],
                         ExpenseType.OTHER: ["Miscellaneous expense", "Unexpected cost"]
                     }
                     
@@ -1013,11 +1013,15 @@ class ExpenseForm:
             col1, col2, col3 = st.columns([1, 2, 1])
             with col2:
                 # Validate required fields before enabling submit
+                # Description is only required for OTHER expense type
+                description_valid = (
+                    expense_type != ExpenseType.OTHER or 
+                    (expense_description and len(expense_description.strip()) >= 3)
+                )
                 can_submit = (
                     expense_amount and 
                     expense_amount > 0 and
-                    expense_description and
-                    len(expense_description.strip()) >= 3 and
+                    description_valid and
                     not st.session_state.expense_processing_submission  # Disable while processing
                 )
                 
@@ -1039,7 +1043,7 @@ class ExpenseForm:
             
             # Show required fields reminder
             if not can_submit:
-                st.info("📋 **Required fields:** Expense Type, Amount (>0), Description (min 3 characters)")
+                st.info("📋 **Required fields:** Expense Type, Amount (>0). Description required for 'Other Expense'.")
         
         # RECENT EXPENSES SECTION (before form submission logic)
         st.markdown("---")
@@ -1304,18 +1308,37 @@ class OpeningScreen:
         
         st.markdown("---")
         
+        # Initialize pagination state
+        if 'admin_page' not in st.session_state:
+            st.session_state.admin_page = 0
+        if 'admin_cursors' not in st.session_state:
+            st.session_state.admin_cursors = {0: None}  # Store cursors for each page
+        
+        PAGE_SIZE = 20  # Users per page
+        
         try:
-            users = self.db.get_docs(USER_DB_COLLECTION)
-            
-            if not users:
-                st.info("No users found in the system.")
-                return
-            
-            # Display summary stats
-            total_users = len(users)
-            approved_users = len([u for u in users if u.get('status') == 'approved'])
-            pending_users = len([u for u in users if u.get('status') == 'pending_approval'])
-            rejected_users = len([u for u in users if u.get('status') == 'rejected'])
+            # Get user counts for summary
+            # Fetch a batch of users to count (works without composite indexes)
+            try:
+                LIMIT = 500
+                all_users_for_count = self.db.get_docs(USER_DB_COLLECTION, limit=LIMIT)
+                total_users_count = len(all_users_for_count)
+                approved_users_count = len([u for u in all_users_for_count if u.get('status') == 'approved'])
+                pending_users_count = len([u for u in all_users_for_count if u.get('status') == 'pending_approval'])
+                rejected_users_count = len([u for u in all_users_for_count if u.get('status') == 'rejected'])
+
+                limit_reached = total_users_count >= LIMIT
+                # Add "+" if limit reached, for all user types
+                total_users = f"{total_users_count}+" if limit_reached else str(total_users_count)
+                approved_users = f"{approved_users_count}+" if limit_reached else str(approved_users_count)
+                pending_users = f"{pending_users_count}+" if limit_reached else str(pending_users_count)
+                rejected_users = f"{rejected_users_count}+" if limit_reached else str(rejected_users_count)
+            except Exception:
+                # Fallback if count fails
+                total_users = "?"
+                approved_users = "?"
+                pending_users = "?"
+                rejected_users = "?"
             
             col1, col2, col3, col4 = st.columns(4)
             with col1:
@@ -1336,96 +1359,144 @@ class OpeningScreen:
                 st.subheader("User Role & Status Management")
                 st.info("💡 Users with 'approved' status can access the app. Change status to 'rejected' or 'pending_approval' to revoke access.")
                 
-                # Display users in a table format
-                for i, user_doc in enumerate(users):
-                    user_data = user_doc
-                    email = user_data.get('email', 'Unknown')
-                    name = user_data.get('name', '')
-                    current_role = user_data.get('role', UserRole.EMPLOYEE)
-                    status = user_data.get('status', 'pending_approval')
-                    
-                    # Skip the owner's own account
-                    if is_project_owner(email):
-                        continue
-                    
-                    with st.container():
-                        col1, col2, col3, col4, col5 = st.columns([3, 2, 2, 2, 1])
+                # Get current page cursor
+                current_cursor = st.session_state.admin_cursors.get(st.session_state.admin_page)
+                
+                # Fetch paginated users
+                result = self.db.get_docs_paginated(
+                    collection=USER_DB_COLLECTION,
+                    page_size=PAGE_SIZE,
+                    cursor=current_cursor,
+                    order_by="email",
+                    order_direction="ASCENDING"
+                )
+                
+                users = result.documents
+                
+                if not users:
+                    st.info("No users found in the system.")
+                else:
+                    # Display users in a table format
+                    for i, user_data in enumerate(users):
+                        email = user_data.get('email', 'Unknown')
+                        name = user_data.get('name', '')
+                        current_role = user_data.get('role', UserRole.EMPLOYEE)
+                        status = user_data.get('status', 'pending_approval')
                         
-                        with col1:
-                            if name:
-                                st.text(f"👤 {name}")
-                                st.caption(f"📧 {email}")
-                            else:
-                                st.text(f"📧 {email}")
+                        # Skip the owner's own account
+                        if is_project_owner(email):
+                            continue
                         
-                        with col2:
-                            if status == "approved":
-                                status_icon = "🟢"
-                            elif status == "pending_approval":
-                                status_icon = "🟡"
-                            else:
-                                status_icon = "🔴"
-                            st.text(f"{status_icon} {status}")
+                        # Create unique key using page and index
+                        unique_key = f"p{st.session_state.admin_page}_u{i}"
                         
-                        with col3:
-                            # Only owners can change roles
-                            if is_owner:
-                                new_role = st.selectbox(
-                                    "Role",
-                                    options=list(UserRole),
-                                    index=list(UserRole).index(current_role) if current_role in list(UserRole) else 0,
-                                    key=f"role_{i}"
+                        with st.container():
+                            col1, col2, col3, col4, col5 = st.columns([3, 2, 2, 2, 1])
+                            
+                            with col1:
+                                if name:
+                                    st.text(f"👤 {name}")
+                                    st.caption(f"📧 {email}")
+                                else:
+                                    st.text(f"📧 {email}")
+                            
+                            with col2:
+                                if status == "approved":
+                                    status_icon = "🟢"
+                                elif status == "pending_approval":
+                                    status_icon = "🟡"
+                                else:
+                                    status_icon = "🔴"
+                                st.text(f"{status_icon} {status}")
+                            
+                            with col3:
+                                # Only owners can change roles
+                                if is_owner:
+                                    new_role = st.selectbox(
+                                        "Role",
+                                        options=list(UserRole),
+                                        index=list(UserRole).index(current_role) if current_role in list(UserRole) else 0,
+                                        key=f"role_{unique_key}"
+                                    )
+                                else:
+                                    st.text(f"Role: {current_role}")
+                                    new_role = current_role
+                            
+                            with col4:
+                                # Status options for changing user access
+                                status_options = ["approved", "pending_approval", "rejected"]
+                                current_status_index = status_options.index(status) if status in status_options else 1
+                                new_status = st.selectbox(
+                                    "Status",
+                                    options=status_options,
+                                    index=current_status_index,
+                                    key=f"status_{unique_key}"
                                 )
-                            else:
-                                st.text(f"Role: {current_role}")
-                                new_role = current_role
-                        
-                        with col4:
-                            # Status options for changing user access
-                            status_options = ["approved", "pending_approval", "rejected"]
-                            current_status_index = status_options.index(status) if status in status_options else 1
-                            new_status = st.selectbox(
-                                "Status",
-                                options=status_options,
-                                index=current_status_index,
-                                key=f"status_{i}"
-                            )
-                        
-                        with col5:
-                            if st.button("💾", key=f"update_{i}", help="Save changes"):
-                                try:
-                                    doc_id = user_data.get('id')
-                                    if doc_id:
-                                        update_data = {
-                                            "status": new_status,
-                                            "updated_by": st.session_state.user_email,
-                                            "updated_at": get_ist_now_str()
-                                        }
-                                        # Only update role if owner
-                                        if is_owner:
-                                            update_data["role"] = new_role
-                                        
-                                        self.db.update_doc(USER_DB_COLLECTION, doc_id, update_data)
-                                        
-                                        st.success(f"Updated {email}")
-                                        st.rerun()
-                                    else:
-                                        st.error("User document ID not found")
-                                except Exception as e:
-                                    st.error(f"Error updating user: {str(e)}")
-                        
-                        st.divider()
+                            
+                            with col5:
+                                if st.button("💾", key=f"update_{unique_key}", help="Save changes"):
+                                    try:
+                                        doc_id = user_data.get('id')
+                                        if doc_id:
+                                            update_data = {
+                                                "status": new_status,
+                                                "updated_by": st.session_state.user_email,
+                                                "updated_at": get_ist_now_str()
+                                            }
+                                            # Only update role if owner
+                                            if is_owner:
+                                                update_data["role"] = new_role
+                                            
+                                            self.db.update_doc(USER_DB_COLLECTION, doc_id, update_data)
+                                            
+                                            st.success(f"Updated {email}")
+                                            st.rerun()
+                                        else:
+                                            st.error("User document ID not found")
+                                    except Exception as e:
+                                        st.error(f"Error updating user: {str(e)}")
+                            
+                            st.divider()
+                    
+                    # Pagination controls
+                    col1, col2, col3 = st.columns([1, 2, 1])
+                    
+                    with col1:
+                        if st.session_state.admin_page > 0:
+                            if st.button("⬅️ Previous", key="prev_page"):
+                                st.session_state.admin_page -= 1
+                                st.rerun()
+                    
+                    with col2:
+                        st.markdown(f"<p style='text-align: center;'>Page {st.session_state.admin_page + 1}</p>", unsafe_allow_html=True)
+                    
+                    with col3:
+                        if result.has_more:
+                            if st.button("Next ➡️", key="next_page"):
+                                # Store cursor for next page
+                                next_page = st.session_state.admin_page + 1
+                                st.session_state.admin_cursors[next_page] = result.next_cursor
+                                st.session_state.admin_page = next_page
+                                st.rerun()
             
             with tab2:
                 st.subheader("Pending User Approvals")
                 
-                # Pending approvals section
-                pending_users_list = [user for user in users if user.get('status') == 'pending_approval']
+                # Fetch pending users (filter only, no order_by to avoid index requirement)
+                try:
+                    pending_users_list = self.db.get_docs(
+                        collection=USER_DB_COLLECTION,
+                        filters=[("status", "==", "pending_approval")],
+                        limit=100
+                    )
+                except Exception as e:
+                    st.error(f"Error loading pending users: {str(e)}")
+                    pending_users_list = []
                 
                 if not pending_users_list:
                     st.info("✅ No pending approvals found.")
                 else:
-                    for user_data in pending_users_list:
+                    for idx, user_data in enumerate(pending_users_list):
                         email = user_data.get('email', 'Unknown')
                         name = user_data.get('name', '')
                         if is_project_owner(email):
@@ -1446,7 +1517,7 @@ class OpeningScreen:
                                 st.write("⏳ Awaiting approval")
                             
                             with col3:
-                                if st.button("✅", key=f"approve_{email}", help="Approve user"):
+                                if st.button("✅", key=f"approve_{idx}_{email}", help="Approve user"):
                                     try:
                                         doc_id = user_data.get('id')
                                         if not doc_id:
@@ -1466,7 +1537,7 @@ class OpeningScreen:
                                         st.error(f"Error approving user: {str(e)}")
                             
                             with col4:
-                                if st.button("❌", key=f"reject_{email}", help="Reject user"):
+                                if st.button("❌", key=f"reject_{idx}_{email}", help="Reject user"):
                                     try:
                                         doc_id = user_data.get('id')
                                         if not doc_id:
@@ -1490,12 +1561,21 @@ class OpeningScreen:
             with tab3:
                 st.subheader("Rejected Users")
                 
-                rejected_users_list = [user for user in users if user.get('status') == 'rejected']
+                # Fetch rejected users (filter only, no order_by to avoid index requirement)
+                try:
+                    rejected_users_list = self.db.get_docs(
+                        collection=USER_DB_COLLECTION,
+                        filters=[("status", "==", "rejected")],
+                        limit=100
+                    )
+                except Exception as e:
+                    st.error(f"Error loading rejected users: {str(e)}")
+                    rejected_users_list = []
                 
                 if not rejected_users_list:
                     st.info("✅ No rejected users found.")
                 else:
-                    for user_data in rejected_users_list:
+                    for idx, user_data in enumerate(rejected_users_list):
                         email = user_data.get('email', 'Unknown')
                         name = user_data.get('name', '')
                         if is_project_owner(email):
@@ -1516,7 +1596,7 @@ class OpeningScreen:
                                 st.write("🔴 Rejected")
                             
                             with col3:
-                                if st.button("🔄 Reinstate", key=f"reinstate_{email}", help="Approve this user"):
+                                if st.button("🔄 Reinstate", key=f"reinstate_{idx}_{email}", help="Approve this user"):
                                     try:
                                         doc_id = user_data.get('id')
                                         if not doc_id:
@@ -1534,6 +1614,8 @@ class OpeningScreen:
                                         st.rerun()
                                     except Exception as e:
                                         st.error(f"Error reinstating user: {str(e)}")
+                            
+                            st.divider()
                             
                             st.divider()
                 
