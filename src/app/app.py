@@ -1196,7 +1196,7 @@ class OpeningScreen:
         
         if st.button("Sign In"):
             if not email or not password:
-                st.show_error_message("MISSING_FIELDS")
+                self.show_error_message("MISSING_FIELDS")
                 return
             
             is_logged_in, error_message = self.user_auth.login(email, password)
@@ -1629,6 +1629,13 @@ class DailyReportPage:
         self.medical_collection = DBCollectionNames(st.secrets["database_collection"]).value
         self.expense_collection = DBCollectionNames(st.secrets.get("expense_collection", "expenses_dev")).value
     
+    def is_admin_user(self) -> bool:
+        """Check if current user is an admin or project owner"""
+        from utils import is_project_owner
+        user_email = st.session_state.get('user_email', '')
+        user_role = st.session_state.get('user_role', '')
+        return is_project_owner(user_email) or user_role == UserRole.ADMIN.value
+    
     def get_today_date_range(self):
         """Get the start and end datetime for today in IST"""
         today = get_ist_now()
@@ -1636,47 +1643,73 @@ class DailyReportPage:
         end_of_day = today.replace(hour=23, minute=59, second=59, microsecond=999999)
         return start_of_day, end_of_day
     
-    def fetch_daily_collections(self):
-        """Fetch all medical records for today using server-side date filtering"""
+    def fetch_daily_collections(self, target_date: datetime = None):
+        """Fetch all medical records for a specific date using server-side date filtering
+        
+        Args:
+            target_date: The date to fetch records for. If None, uses today's date.
+        """
         try:
-            # Use server-side date filtering for efficiency at scale
-            today_records = db.get_today_docs(
-                collection=self.medical_collection,
-                date_field="date",
-                limit=1000
-            )
+            if target_date is None:
+                # Use today's records
+                records = db.get_today_docs(
+                    collection=self.medical_collection,
+                    date_field="date",
+                    limit=1000
+                )
+            else:
+                # Use specific date
+                records = db.get_docs_for_date(
+                    collection=self.medical_collection,
+                    target_date=target_date,
+                    date_field="date",
+                    limit=1000
+                )
             
             # Calculate total collection
             total_collection = 0
-            for record in today_records:
+            for record in records:
                 payment = record.get('payment', {})
                 if isinstance(payment, dict):
                     total_collection += payment.get('amount', 0)
                 elif hasattr(payment, 'amount'):
                     total_collection += payment.amount
             
-            return today_records, total_collection
+            return records, total_collection
             
         except Exception as e:
             logger.error(f"Error fetching daily collections: {str(e)}")
             return [], 0
     
-    def fetch_daily_expenses(self):
-        """Fetch all expenses for today using server-side date filtering"""
+    def fetch_daily_expenses(self, target_date: datetime = None):
+        """Fetch all expenses for a specific date using server-side date filtering
+        
+        Args:
+            target_date: The date to fetch expenses for. If None, uses today's date.
+        """
         try:
-            # Use server-side date filtering for efficiency at scale
-            today_expenses = db.get_today_docs(
-                collection=self.expense_collection,
-                date_field="date",
-                limit=1000
-            )
+            if target_date is None:
+                # Use today's expenses
+                expenses = db.get_today_docs(
+                    collection=self.expense_collection,
+                    date_field="date",
+                    limit=1000
+                )
+            else:
+                # Use specific date
+                expenses = db.get_docs_for_date(
+                    collection=self.expense_collection,
+                    target_date=target_date,
+                    date_field="date",
+                    limit=1000
+                )
             
             # Calculate total expenses
             total_expenses = 0
-            for expense in today_expenses:
+            for expense in expenses:
                 total_expenses += expense.get('amount', 0)
             
-            return today_expenses, total_expenses
+            return expenses, total_expenses
             
         except Exception as e:
             logger.error(f"Error fetching daily expenses: {str(e)}")
@@ -1691,37 +1724,96 @@ class DailyReportPage:
         st.markdown("""
         <div style="text-align: center; padding: 20px 0;">
             <h1 style="color: #2ecc71; margin-bottom: 10px;">📊 Daily Report</h1>
-            <p style="color: #666; font-size: 16px;">Overview of today's collections and expenses</p>
+            <p style="color: #666; font-size: 16px;">Overview of payments and expenses</p>
         </div>
         """, unsafe_allow_html=True)
         
-        # Show today's date
+        # Get today's date
         today = get_ist_now()
-        st.markdown(f"### 📅 {today.strftime('%A, %d %B %Y')}")
+        today_date = today.date()
+        
+        # Check if user is admin
+        is_admin = self.is_admin_user()
+        
+        # Initialize selected_date to today for all users
+        selected_date = today_date
+        
+        # Date selection for admins
+        if is_admin:
+            selected_date = st.date_input(
+                label="Report Date",
+                value=today_date,
+                max_value=today_date,  # Cannot select future dates
+                help="Select a date to view the daily report. You can view reports for any past date.",
+                key="report_date_selector"
+            )
+            st.caption("💡 As an admin, you can view reports from any past date. Employees can only see today's report.")
+            
+            # Convert selected_date to datetime with IST timezone for querying
+            from datetime import timezone, timedelta
+            IST = timezone(timedelta(hours=5, minutes=30))
+            target_date = datetime.combine(selected_date, datetime.min.time()).replace(tzinfo=IST)
+            
+            # Display the selected date
+            st.markdown(f"### 📅 {selected_date.strftime('%A, %d %B %Y')}")
+        else:
+            # Non-admins can only see today's report
+            target_date = None  # None means today
+            st.markdown(f"### 📅 {today.strftime('%A, %d %B %Y')}")
         
         st.markdown("---")
         
-        # Fetch data with loading indicators
+        # Fetch data first for summary
+        with st.spinner("Loading data..."):
+            records, total_collection = self.fetch_daily_collections(target_date)
+            expenses, total_expenses = self.fetch_daily_expenses(target_date)
+        
+        # Summary section at the top - Net Amount in a styled card
+        net_amount = total_collection - total_expenses
+        is_profit = net_amount >= 0
+        
+        # Styled summary card
+        summary_color = "#2ecc71" if is_profit else "#e74c3c"
+        summary_bg = "rgba(46, 204, 113, 0.1)" if is_profit else "rgba(231, 76, 60, 0.1)"
+        status_text = "Money In" if is_profit else "Money Out"
+        status_icon = "💰" if is_profit else "💸"
+        
+        st.markdown(f"""
+        <div style="
+            background: {summary_bg};
+            border: 2px solid {summary_color};
+            border-radius: 10px;
+            padding: 18px 24px;
+            text-align: center;
+        ">
+            <div style="color: #888; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">Today's Balance</div>
+            <div style="color: {summary_color}; font-size: 34px; font-weight: 700;">₹{net_amount:,} <span style="font-size: 15px; font-weight: 500;">{status_icon} {status_text}</span></div>
+            <div style="color: #666; font-size: 12px; margin-top: 6px;">₹{total_collection:,} income · ₹{total_expenses:,} expenses</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("---")
+        
+        # Details in two columns
         col1, col2 = st.columns(2)
         
         with col1:
-            st.markdown("### 💰 Collections")
-            with st.spinner("Loading collections..."):
-                records, total_collection = self.fetch_daily_collections()
+            st.markdown("### 💰 Income")
             
-            # Display total collection metric
+            # Display total income metric
+            collection_label = "Total Payments Received Today" if (not is_admin or selected_date == today_date) else f"Total Payments Received ({selected_date.strftime('%d %b %Y')})"
             st.metric(
-                label="Total Collection Today",
+                label=collection_label,
                 value=f"₹{total_collection:,}",
-                help="Total amount collected from medical records today"
+                help="Total payments received from medical records"
             )
             
             # Show number of records
-            st.info(f"📋 {len(records)} medical record(s) today")
+            st.info(f"📋 {len(records)} patient(s) helped today")
             
             # Show breakdown if there are records
             if records:
-                with st.expander("📄 View Collection Details", expanded=False):
+                with st.expander("📄 View Payment Details", expanded=False):
                     for i, record in enumerate(records):
                         patient = record.get('patient', {})
                         payment = record.get('payment', {})
@@ -1746,14 +1838,13 @@ class DailyReportPage:
         
         with col2:
             st.markdown("### 💸 Expenses")
-            with st.spinner("Loading expenses..."):
-                expenses, total_expenses = self.fetch_daily_expenses()
             
             # Display total expenses metric
+            expense_label = "Total Expenses Today" if (not is_admin or selected_date == today_date) else f"Total Expenses ({selected_date.strftime('%d %b %Y')})"
             st.metric(
-                label="Total Expenses Today",
+                label=expense_label,
                 value=f"₹{total_expenses:,}",
-                help="Total expenses recorded today"
+                help="Total expenses recorded"
             )
             
             # Show number of expense records
@@ -1777,35 +1868,6 @@ class DailyReportPage:
                         
                         if i < len(expenses) - 1:
                             st.divider()
-        
-        # Summary section
-        st.markdown("---")
-        st.markdown("### 📈 Daily Summary")
-        
-        net_amount = total_collection - total_expenses
-        
-        summary_col1, summary_col2, summary_col3 = st.columns(3)
-        
-        with summary_col1:
-            st.metric(
-                label="💰 Total Collection",
-                value=f"₹{total_collection:,}"
-            )
-        
-        with summary_col2:
-            st.metric(
-                label="💸 Total Expenses",
-                value=f"₹{total_expenses:,}"
-            )
-        
-        with summary_col3:
-            delta_color = "normal" if net_amount >= 0 else "inverse"
-            st.metric(
-                label="📊 Net Amount",
-                value=f"₹{net_amount:,}",
-                delta=f"{'Profit' if net_amount >= 0 else 'Loss'}",
-                delta_color=delta_color
-            )
         
         # Refresh button
         st.markdown("---")
@@ -1919,23 +1981,28 @@ class PrimeLabsUI:
         current_page = st.session_state.get('current_page', 'Medical Records')
         
         # Render the appropriate page based on selection
-        if is_authenticated and is_authorized:
-            if current_page == "Medical Records":
+        try:
+            if is_authenticated and is_authorized:
+                if current_page == "Medical Records":
+                    MedicalRecordForm().render(is_authorized)
+                elif current_page == "Expenses":
+                    ExpenseForm().render(is_authorized)
+                elif current_page == "Daily Report":
+                    DailyReportPage().render(is_authorized)
+                elif current_page == "Admin":
+                    # Show admin page only to project owners and Admin role users
+                    if (is_project_owner(st.session_state.user_email) or 
+                        st.session_state.user_role == UserRole.ADMIN.value):
+                        self.opening_screen.show_admin_user_management()
+                    else:
+                        st.error("❌ Access denied. Admin page is only accessible to users with Admin role.")
+            else:
+                # Show medical records form by default for unauthorized users (they'll see the warning)
                 MedicalRecordForm().render(is_authorized)
-            elif current_page == "Expenses":
-                ExpenseForm().render(is_authorized)
-            elif current_page == "Daily Report":
-                DailyReportPage().render(is_authorized)
-            elif current_page == "Admin":
-                # Show admin page only to project owners and Admin role users
-                if (is_project_owner(st.session_state.user_email) or 
-                    st.session_state.user_role == UserRole.ADMIN.value):
-                    self.opening_screen.show_admin_user_management()
-                else:
-                    st.error("❌ Access denied. Admin page is only accessible to users with Admin role.")
-        else:
-            # Show medical records form by default for unauthorized users (they'll see the warning)
-            MedicalRecordForm().render(is_authorized)
+        except Exception as e:
+            logger.error(f"Unexpected error rendering page '{current_page}': {str(e)}", exc_info=True)
+            st.error("⚠️ **Something went wrong**")
+            st.info("An unexpected error occurred. Please try refreshing the page. If the problem persists, contact the system administrator.")
 
 
 if __name__ == '__main__':
