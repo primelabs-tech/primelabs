@@ -984,15 +984,21 @@ class ExpenseForm:
                 # Add predefined suggestions based on expense type
                 if expense_type:
                     suggestions = {
+                        ExpenseType.CHAI_NASHTA: ["Daily refreshments", "Staff lunch arrangement"],
+                        ExpenseType.PETROL_DIESEL: ["Vehicle fuel", "Generator diesel"],
                         ExpenseType.RENT: ["Monthly office rent - [Month/Year]", "Clinic space rental"],
                         ExpenseType.ELECTRICITY: ["Monthly electricity bill", "Generator fuel cost"],
                         ExpenseType.INTERNET: ["Monthly internet bill", "WiFi router purchase"],
+                        ExpenseType.STAFF_SALARY: ["[Name] salary for [Month]", "Overtime payment"],
+                        ExpenseType.DOCTOR_CUT: ["Dr. [Name] referral cut", "Monthly doctor payments"],
                         ExpenseType.DOCTOR_FEES: ["Dr. [Name] consultation fee", "Specialist consultation"],
+                        ExpenseType.MACHINE_REPAIR: ["[Machine name] repair", "Annual maintenance"],
+                        ExpenseType.MACHINE_INSTALL: ["[Machine name] installation", "Setup charges"],
+                        ExpenseType.MACHINE_COST: ["[Machine name] purchase", "New equipment cost"],
+                        ExpenseType.PAPER_STATIONARY: ["Office supplies purchase", "Printer paper and ink"],
+                        ExpenseType.THYROCARE: ["Thyrocare test kits", "Thyrocare supplies"],
                         ExpenseType.STAFF_EXPENSE: ["Staff uniform purchase", "Staff training cost"],
-                        ExpenseType.EQUIPMENT: ["[Equipment name] purchase", "Equipment maintenance"],
-                        ExpenseType.SALARY: ["[Name] salary for [Month]", "Overtime payment"],
-                        ExpenseType.STATIONARY: ["Office supplies purchase", "Printer paper and ink"],
-                        ExpenseType.CHAI_NASHTA: ["Daily refreshments", "Staff lunch arrangement"],
+                        ExpenseType.SALARY: ["[Name] salary for [Month]", "Bonus payment"],
                         ExpenseType.OTHER: ["Miscellaneous expense", "Unexpected cost"]
                     }
                     
