@@ -1194,11 +1194,10 @@ class OpeningScreen:
         email = st.text_input("Email")
         password = st.text_input("Password", type="password")
         
-        if st.button("Sign In"):
-            if not email or not password:
-                self.show_error_message("MISSING_FIELDS")
-                return
-            
+        # Disable button when fields are empty
+        fields_filled = bool(email and password)
+        
+        if st.button("Sign In", disabled=not fields_filled):
             is_logged_in, error_message = self.user_auth.login(email, password)
             if is_logged_in:
                 st.success("Login successful!")
