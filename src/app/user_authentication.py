@@ -1,7 +1,6 @@
 from typing import Optional
 
 import streamlit as st
-import pyrebase
 from google.cloud import firestore
 import firebase_admin
 from firebase_admin import credentials, auth
@@ -10,8 +9,8 @@ from datetime import datetime
 
 from logger import logger
 from firestore_crud import get_firestore_admin_credential_dict, FirestoreCRUD
+from firebase_auth_client import FirebaseAuthClient
 from utils import (
-    get_firebase_auth_config,
     get_firestore,
     is_project_owner,
     get_ist_now_str,
@@ -54,7 +53,7 @@ class UserAuthentication:
             return True, ""
         except Exception as e:
             if user:
-                self.auth_client.delete_user(user['localId'])
+                self.auth_client.delete_user(user['idToken'])
             error_message = f"Error creating user: {str(e)}"
             logger.error(error_message)
             return False, error_message
@@ -246,10 +245,9 @@ class UserAuthentication:
                 logger.error(f"Firebase initialization failed: {str(e)}")
                 raise
 
-    def _get_auth_client(self):
-        auth_config = get_firebase_auth_config()
-        firebase = pyrebase.initialize_app(auth_config)
-        return firebase.auth()
+    def _get_auth_client(self) -> FirebaseAuthClient:
+        api_key = st.secrets["web_api_key"]
+        return FirebaseAuthClient(api_key)
 
     def _initialize_session_state(self):
         st.session_state.authenticated = False
