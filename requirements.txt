@@ -8,8 +8,8 @@ python-dotenv==1.0.0
 streamlit==1.34.0
 StrEnum==0.4.15
 
-# Pin grpcio for faster installs (has pre-built wheels)
-grpcio==1.62.3
+# Pin grpcio for faster installs (has pre-built wheels for Python 3.13)
+grpcio>=1.66.0
 
 # Pin compatible versions to avoid conflicts
 requests==2.31.0
