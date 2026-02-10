@@ -294,6 +294,46 @@ class FirestoreCRUD:
             order_direction="DESCENDING"
         )
 
+    def get_docs_for_month(
+        self,
+        collection: str,
+        year: int,
+        month: int,
+        date_field: str = "date",
+        additional_filters: List[tuple] = None,
+        limit: int = 10000
+    ) -> List[Dict]:
+        """
+        Get all documents for a specific month (IST timezone).
+        
+        Args:
+            collection: Firestore collection name
+            year: The year (e.g., 2026)
+            month: The month (1-12)
+            date_field: Name of the date field in documents
+            additional_filters: Optional additional filters
+            limit: Maximum number of documents to return
+            
+        Returns:
+            List of documents from the specified month
+        """
+        import calendar
+        
+        # Get the first and last day of the month
+        first_day = datetime(year, month, 1, 0, 0, 0, 0, tzinfo=IST)
+        last_day_num = calendar.monthrange(year, month)[1]
+        last_day = datetime(year, month, last_day_num, 23, 59, 59, 999999, tzinfo=IST)
+        
+        return self.get_docs_by_date_range(
+            collection=collection,
+            start_date=first_day,
+            end_date=last_day,
+            date_field=date_field,
+            additional_filters=additional_filters,
+            limit=limit,
+            order_direction="DESCENDING"
+        )
+
     # ==================== PAGINATION METHODS ====================
 
     def get_docs_paginated(

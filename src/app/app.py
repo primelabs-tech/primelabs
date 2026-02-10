@@ -1636,7 +1636,7 @@ class OpeningScreen:
             st.error(f"Error loading user management: {str(e)}")
 
 class DailyReportPage:
-    """Daily Report page showing total collections and expenses for the day"""
+    """Daily Report page showing total collections and expenses for the day or month"""
     
     def __init__(self):
         self.medical_collection = DBCollectionNames(st.secrets["database_collection"]).value
@@ -1648,6 +1648,64 @@ class DailyReportPage:
         user_email = st.session_state.get('user_email', '')
         user_role = st.session_state.get('user_role', '')
         return is_project_owner(user_email) or user_role == UserRole.ADMIN.value
+    
+    def fetch_monthly_collections(self, year: int, month: int):
+        """Fetch all medical records for a specific month
+        
+        Args:
+            year: The year (e.g., 2026)
+            month: The month (1-12)
+        """
+        try:
+            records = db.get_docs_for_month(
+                collection=self.medical_collection,
+                year=year,
+                month=month,
+                date_field="date",
+                limit=10000
+            )
+            
+            # Calculate total collection
+            total_collection = 0
+            for record in records:
+                payment = record.get('payment', {})
+                if isinstance(payment, dict):
+                    total_collection += payment.get('amount', 0)
+                elif hasattr(payment, 'amount'):
+                    total_collection += payment.amount
+            
+            return records, total_collection
+            
+        except Exception as e:
+            logger.error(f"Error fetching monthly collections: {str(e)}")
+            return [], 0
+    
+    def fetch_monthly_expenses(self, year: int, month: int):
+        """Fetch all expenses for a specific month
+        
+        Args:
+            year: The year (e.g., 2026)
+            month: The month (1-12)
+        """
+        try:
+            expenses = db.get_docs_for_month(
+                collection=self.expense_collection,
+                year=year,
+                month=month,
+                date_field="date",
+                limit=10000
+            )
+            
+            # Calculate total expenses
+            total_expenses = 0
+            for expense in expenses:
+                total_expenses += expense.get('amount', 0)
+            
+            return expenses, total_expenses
+            
+        except Exception as e:
+            logger.error(f"Error fetching monthly expenses: {str(e)}")
+            return [], 0
     
     def get_today_date_range(self):
         """Get the start and end datetime for today in IST"""
@@ -1733,6 +1791,31 @@ class DailyReportPage:
             st.warning("🔐 You need to be logged in and approved to access this page.")
             return
         
+        # Check if user is admin
+        is_admin = self.is_admin_user()
+        
+        # Get today's date
+        today = get_ist_now()
+        today_date = today.date()
+        
+        # Report type selection (Monthly only for admins)
+        if is_admin:
+            report_type = st.radio(
+                "Report Type",
+                options=["Daily Report", "Monthly Report"],
+                horizontal=True,
+                key="report_type_selector"
+            )
+        else:
+            report_type = "Daily Report"
+        
+        if report_type == "Monthly Report":
+            self._render_monthly_report(is_admin, today, today_date)
+        else:
+            self._render_daily_report(is_admin, today, today_date)
+    
+    def _render_daily_report(self, is_admin: bool, today: datetime, today_date):
+        """Render the daily report view"""
         # Header
         st.markdown("""
         <div style="text-align: center; padding: 20px 0;">
@@ -1740,13 +1823,6 @@ class DailyReportPage:
             <p style="color: #666; font-size: 16px;">Overview of payments and expenses</p>
         </div>
         """, unsafe_allow_html=True)
-        
-        # Get today's date
-        today = get_ist_now()
-        today_date = today.date()
-        
-        # Check if user is admin
-        is_admin = self.is_admin_user()
         
         # Initialize selected_date to today for all users
         selected_date = today_date
@@ -1887,6 +1963,189 @@ class DailyReportPage:
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             if st.button("🔄 Refresh Data", use_container_width=True, key="refresh_daily_report"):
+                st.rerun()
+    
+    def _render_monthly_report(self, is_admin: bool, today: datetime, today_date):
+        """Render the monthly report view (Admin only)"""
+        import calendar
+        
+        # Header
+        st.markdown("""
+        <div style="text-align: center; padding: 20px 0;">
+            <h1 style="color: #9b59b6; margin-bottom: 10px;">📆 Monthly Report</h1>
+            <p style="color: #666; font-size: 16px;">Monthly overview of payments and expenses</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Month and Year selection
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Generate list of months
+            month_names = list(calendar.month_name)[1:]  # Skip empty first element
+            current_month_index = today.month - 1  # 0-indexed for selectbox
+            selected_month_name = st.selectbox(
+                "Select Month",
+                options=month_names,
+                index=current_month_index,
+                key="monthly_report_month"
+            )
+            selected_month = month_names.index(selected_month_name) + 1
+        
+        with col2:
+            # Generate list of years (from 2024 to current year)
+            current_year = today.year
+            years = list(range(2024, current_year + 1))
+            selected_year = st.selectbox(
+                "Select Year",
+                options=years,
+                index=len(years) - 1,  # Default to current year
+                key="monthly_report_year"
+            )
+        
+        # Validate that selected month/year is not in the future
+        if selected_year > current_year or (selected_year == current_year and selected_month > today.month):
+            st.warning("⚠️ Cannot view reports for future months.")
+            return
+        
+        # Display the selected month
+        st.markdown(f"### 📅 {selected_month_name} {selected_year}")
+        st.markdown("---")
+        
+        # Fetch monthly data
+        with st.spinner("Loading monthly data..."):
+            records, total_collection = self.fetch_monthly_collections(selected_year, selected_month)
+            expenses, total_expenses = self.fetch_monthly_expenses(selected_year, selected_month)
+        
+        # Summary section at the top - Net Amount in a styled card
+        net_amount = total_collection - total_expenses
+        is_profit = net_amount >= 0
+        
+        # Styled summary card
+        summary_color = "#9b59b6" if is_profit else "#e74c3c"
+        summary_bg = "rgba(155, 89, 182, 0.1)" if is_profit else "rgba(231, 76, 60, 0.1)"
+        status_text = "Net Profit" if is_profit else "Net Loss"
+        status_icon = "📈" if is_profit else "📉"
+        
+        st.markdown(f"""
+        <div style="
+            background: {summary_bg};
+            border: 2px solid {summary_color};
+            border-radius: 10px;
+            padding: 18px 24px;
+            text-align: center;
+        ">
+            <div style="color: #888; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">Monthly Balance - {selected_month_name} {selected_year}</div>
+            <div style="color: {summary_color}; font-size: 34px; font-weight: 700;">₹{net_amount:,} <span style="font-size: 15px; font-weight: 500;">{status_icon} {status_text}</span></div>
+            <div style="color: #666; font-size: 12px; margin-top: 6px;">₹{total_collection:,} income · ₹{total_expenses:,} expenses</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("---")
+        
+        # Details in two columns
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("### 💰 Monthly Income")
+            
+            st.metric(
+                label=f"Total Payments - {selected_month_name} {selected_year}",
+                value=f"₹{total_collection:,}",
+                help="Total payments received from medical records this month"
+            )
+            
+            # Show number of records
+            st.info(f"📋 {len(records)} patient(s) served this month")
+            
+            # Group records by date for better organization
+            if records:
+                with st.expander("📄 View Payment Details", expanded=False):
+                    # Group by date
+                    records_by_date = {}
+                    for record in records:
+                        record_date = record.get('date', '')
+                        date_str, _ = format_datetime_for_display(record_date)
+                        if date_str not in records_by_date:
+                            records_by_date[date_str] = []
+                        records_by_date[date_str].append(record)
+                    
+                    # Display grouped by date
+                    for date_str, date_records in sorted(records_by_date.items(), reverse=True):
+                        daily_total = sum(
+                            r.get('payment', {}).get('amount', 0) if isinstance(r.get('payment', {}), dict) else 0
+                            for r in date_records
+                        )
+                        st.markdown(f"**📅 {date_str}** - {len(date_records)} record(s) - ₹{daily_total:,}")
+                        
+                        for record in date_records:
+                            patient = record.get('patient', {})
+                            payment = record.get('payment', {})
+                            patient_name = patient.get('name', 'Unknown') if isinstance(patient, dict) else 'Unknown'
+                            amount = payment.get('amount', 0) if isinstance(payment, dict) else 0
+                            st.caption(f"  • {patient_name}: ₹{amount:,}")
+                        
+                        st.divider()
+        
+        with col2:
+            st.markdown("### 💸 Monthly Expenses")
+            
+            st.metric(
+                label=f"Total Expenses - {selected_month_name} {selected_year}",
+                value=f"₹{total_expenses:,}",
+                help="Total expenses recorded this month"
+            )
+            
+            # Show number of expense records
+            st.info(f"📋 {len(expenses)} expense record(s) this month")
+            
+            # Group expenses by type for summary
+            if expenses:
+                with st.expander("📄 View Expense Breakdown", expanded=False):
+                    # Group by expense type
+                    expenses_by_type = {}
+                    for expense in expenses:
+                        expense_type = expense.get('expense_type', 'Other')
+                        if expense_type not in expenses_by_type:
+                            expenses_by_type[expense_type] = {'total': 0, 'count': 0}
+                        expenses_by_type[expense_type]['total'] += expense.get('amount', 0)
+                        expenses_by_type[expense_type]['count'] += 1
+                    
+                    # Display by type
+                    st.markdown("**Expense Summary by Category:**")
+                    for expense_type, data in sorted(expenses_by_type.items(), key=lambda x: x[1]['total'], reverse=True):
+                        st.markdown(f"• **{expense_type}**: ₹{data['total']:,} ({data['count']} record(s))")
+                    
+                    st.divider()
+                    
+                    # Also show by date
+                    st.markdown("**Expense Details by Date:**")
+                    expenses_by_date = {}
+                    for expense in expenses:
+                        expense_date = expense.get('date', '')
+                        date_str, _ = format_datetime_for_display(expense_date)
+                        if date_str not in expenses_by_date:
+                            expenses_by_date[date_str] = []
+                        expenses_by_date[date_str].append(expense)
+                    
+                    for date_str, date_expenses in sorted(expenses_by_date.items(), reverse=True):
+                        daily_total = sum(e.get('amount', 0) for e in date_expenses)
+                        st.markdown(f"**📅 {date_str}** - ₹{daily_total:,}")
+                        
+                        for expense in date_expenses:
+                            expense_type = expense.get('expense_type', 'Unknown')
+                            amount = expense.get('amount', 0)
+                            description = expense.get('description', '')
+                            desc_text = f" - {description}" if description else ""
+                            st.caption(f"  • {expense_type}: ₹{amount:,}{desc_text}")
+                        
+                        st.divider()
+        
+        # Refresh button
+        st.markdown("---")
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            if st.button("🔄 Refresh Data", use_container_width=True, key="refresh_monthly_report"):
                 st.rerun()
 
 
