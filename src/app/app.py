@@ -2561,7 +2561,8 @@ class DailyReportPage:
             expenses, total_expenses = self.fetch_monthly_expenses(selected_year, selected_month)
         
         # Summary section at the top - Net Amount in a styled card
-        net_amount = total_collection - total_expenses
+        # Net profit = Income - Expenses - Commission
+        net_amount = total_collection - total_expenses - total_commission
         is_profit = net_amount >= 0
         
         # Styled summary card
