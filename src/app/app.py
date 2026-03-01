@@ -283,8 +283,7 @@ class MedicalRecordForm:
                     try:
                         registered_doctors = db.get_docs(
                             DBCollectionNames.REGISTERED_DOCTORS.value,
-                            filters=[("is_active", "==", True)],
-                            limit=100
+                            filters=[("is_active", "==", True)]
                         )
                     except Exception:
                         registered_doctors = []
