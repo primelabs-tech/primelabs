@@ -318,27 +318,6 @@ class MedicalRecordForm:
                             doctor_location = selected_doctor_data.get('location', '')
                             
                             st.success(f"✅ Selected: Dr. {doctor_name} from {doctor_location}")
-                            
-                            # Show commission rates by category (using checkbox instead of nested expander)
-                            commission_rates = selected_doctor_data.get('commission_rates', [])
-                            if commission_rates:
-                                show_rates = st.checkbox("💰 Show Commission Rates", key="show_commission_rates")
-                                if show_rates:
-                                    st.markdown("**Commission Rates:**")
-                                    # Display in a compact grid format
-                                    rate_cols = st.columns(4)
-                                    for i, cr in enumerate(commission_rates):
-                                        cat = cr.get('category', '')
-                                        ctype = cr.get('commission_type', '')
-                                        rate = cr.get('rate', 0)
-                                        if ctype == CommissionType.PERCENTAGE.value:
-                                            rate_display = f"{rate}%"
-                                        else:
-                                            rate_display = f"₹{int(rate)}"
-                                        with rate_cols[i % 4]:
-                                            st.caption(f"**{cat}**: {rate_display}")
-                            else:
-                                st.caption("💰 Using default commission rates")
                         else:
                             selected_doctor_data = None
             
