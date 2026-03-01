@@ -2137,6 +2137,15 @@ class DailyReportPage:
         user_role = st.session_state.get('user_role', '')
         return is_project_owner(user_email) or user_role == UserRole.ADMIN.value
     
+    def can_view_commissions(self) -> bool:
+        """Check if current user can view commission data (Admin or Manager only)"""
+        from utils import is_project_owner
+        user_email = st.session_state.get('user_email', '')
+        user_role = st.session_state.get('user_role', '')
+        return (is_project_owner(user_email) or 
+                user_role == UserRole.ADMIN.value or 
+                user_role == UserRole.MANAGER.value)
+    
     def fetch_monthly_collections(self, year: int, month: int):
         """Fetch all medical records for a specific month
         
@@ -2373,8 +2382,9 @@ class DailyReportPage:
         status_text = "Money In" if is_profit else "Money Out"
         status_icon = "💰" if is_profit else "💸"
         
-        # Commission info for subtitle
-        commission_text = f" · ₹{total_commission:,} commission" if total_commission > 0 else ""
+        # Commission info for subtitle (only visible to Admin/Manager)
+        can_view_commissions = self.can_view_commissions()
+        commission_text = f" · ₹{total_commission:,} commission" if (total_commission > 0 and can_view_commissions) else ""
         
         st.markdown(f"""
         <div style="
@@ -2467,8 +2477,8 @@ class DailyReportPage:
                         if i < len(expenses) - 1:
                             st.divider()
         
-        # Commission section (only show if there are commissions)
-        if total_commission > 0:
+        # Commission section (only show if there are commissions AND user is Admin/Manager)
+        if total_commission > 0 and can_view_commissions:
             st.markdown("---")
             st.markdown("### 🤝 Doctor Commissions")
             
