@@ -15,6 +15,13 @@ from data_models import (
     ExpenseRecord,
     ExpenseType,
     EXPENSE_DESCRIPTIONS,
+    RegisteredDoctor,
+    CommissionType,
+    DoctorReferralInfo,
+    TestCategory,
+    TestCommissionRate,
+    TestCommissionDetail,
+    DEFAULT_COMMISSION_RATES,
 )
 from user_authentication import UserAuthentication
 from utils import (
@@ -31,6 +38,41 @@ from logger import logger
 
 db = get_firestore()
 USER_DB_COLLECTION = "users"
+
+
+def get_test_category(test_name: str, test_price: int) -> TestCategory:
+    """
+    Determine the test category based on test name and price.
+    This is used to look up the correct commission rate.
+    """
+    test_name_upper = test_name.upper()
+    
+    # CT-SCAN tests
+    if test_name_upper.startswith("CT-SCAN") or test_name_upper.startswith("CT SCAN"):
+        return TestCategory.CT_SCAN
+    
+    # X-RAY tests - categorize by price
+    if test_name_upper.startswith("X-RAY") or test_name_upper.startswith("XRAY"):
+        if test_price <= 350:
+            return TestCategory.XRAY_350
+        elif test_price <= 450:
+            return TestCategory.XRAY_450
+        else:
+            return TestCategory.XRAY_650
+    
+    # USG/Ultrasound tests - categorize by price
+    if "USG" in test_name_upper or "ULTRASOUND" in test_name_upper or "SONOGRAPHY" in test_name_upper:
+        if test_price <= 750:
+            return TestCategory.USG_750
+        else:
+            return TestCategory.USG_1200
+    
+    # ECG
+    if "ECG" in test_name_upper or "EKG" in test_name_upper:
+        return TestCategory.ECG
+    
+    # Everything else is Pathology (blood tests, urine tests, etc.)
+    return TestCategory.PATH
 
 
 class MedicalRecordForm:
@@ -119,7 +161,7 @@ class MedicalRecordForm:
         form_keys_to_clear = [
             'patient_name', 'patient_phone', 'patient_address',
             'phone_checkbox', 'address_checkbox', 'referral_checkbox',
-            'doctor_name', 'doctor_location', 'test_type', 'test_types', 'payment_amount',
+            'doctor_name', 'doctor_location', 'selected_doctor', 'test_type', 'test_types', 'payment_amount',
             'comments'
         ]
         for key in form_keys_to_clear:
@@ -228,33 +270,71 @@ class MedicalRecordForm:
             with st.expander("👨‍⚕️ Referral Information", expanded=False):
                 through_referral = st.checkbox("📋 Patient referred by a doctor", key="referral_checkbox")
                 
+                # Initialize variables for referral
+                selected_doctor = None
+                selected_doctor_data = None
+                doctor_name = None
+                doctor_location = None
+                
                 if through_referral:
-                    st.markdown("**Doctor Details**")
-                    col1, col2 = st.columns(2)
+                    st.markdown("**Select Referring Doctor**")
                     
-                    with col1:
-                        doctor_name = st.text_input(
-                            label="Referring Doctor's Name *",
-                            placeholder="Dr. [Name]", 
-                            help="👨‍⚕️ Enter the full name of the referring doctor",
-                            key="doctor_name"
+                    # Fetch registered doctors
+                    try:
+                        registered_doctors = db.get_docs(
+                            DBCollectionNames.REGISTERED_DOCTORS.value,
+                            filters=[("is_active", "==", True)],
+                            limit=100
                         )
+                    except Exception:
+                        registered_doctors = []
                     
-                    with col2:
-                        doctor_location = st.text_input(
-                            label="Doctor's Clinic/Hospital *",
-                            placeholder="Clinic/Hospital name and location", 
-                            help="🏥 Enter the clinic or hospital details",
-                            key="doctor_location"
+                    if not registered_doctors:
+                        st.warning("⚠️ No registered doctors found. Please contact the admin to register referring doctors.")
+                        through_referral = False  # Disable referral if no doctors
+                    else:
+                        # Create doctor options for dropdown
+                        doctor_options = {
+                            f"Dr. {d.get('name', 'Unknown')} - {d.get('location', '')}": d 
+                            for d in registered_doctors
+                        }
+                        
+                        selected_doctor = st.selectbox(
+                            "Select Referring Doctor *",
+                            options=["-- Select Doctor --"] + list(doctor_options.keys()),
+                            key="selected_doctor",
+                            help="Select the doctor who referred this patient"
                         )
-                    
-                    # Validate doctor info if provided
-                    if through_referral and doctor_name and doctor_location:
-                        is_valid, error_msg = self.validate_doctor_info(doctor_name, doctor_location)
-                        if not is_valid:
-                            st.error(f"❌ {error_msg}")
+                        
+                        if selected_doctor and selected_doctor != "-- Select Doctor --":
+                            selected_doctor_data = doctor_options[selected_doctor]
+                            doctor_name = selected_doctor_data.get('name', '')
+                            doctor_location = selected_doctor_data.get('location', '')
+                            
+                            st.success(f"✅ Selected: Dr. {doctor_name} from {doctor_location}")
+                            
+                            # Show commission rates by category (using checkbox instead of nested expander)
+                            commission_rates = selected_doctor_data.get('commission_rates', [])
+                            if commission_rates:
+                                show_rates = st.checkbox("💰 Show Commission Rates", key="show_commission_rates")
+                                if show_rates:
+                                    st.markdown("**Commission Rates:**")
+                                    # Display in a compact grid format
+                                    rate_cols = st.columns(4)
+                                    for i, cr in enumerate(commission_rates):
+                                        cat = cr.get('category', '')
+                                        ctype = cr.get('commission_type', '')
+                                        rate = cr.get('rate', 0)
+                                        if ctype == CommissionType.PERCENTAGE.value:
+                                            rate_display = f"{rate}%"
+                                        else:
+                                            rate_display = f"₹{int(rate)}"
+                                        with rate_cols[i % 4]:
+                                            st.caption(f"**{cat}**: {rate_display}")
+                            else:
+                                st.caption("💰 Using default commission rates")
                         else:
-                            st.success("✅ Doctor information valid")
+                            selected_doctor_data = None
             
             # TEST INFORMATION SECTION
             with st.expander("🔬 Test Information", expanded=True):
@@ -467,7 +547,7 @@ class MedicalRecordForm:
                     "CT-SCAN PNS CORONAL": 2000, 
                     "CT-SCAN UROGRAPHY": 5500,
                     "CT-SCAN TRIPLE PHASE ABDOMEN": 8000,
-                    "3DCT HEAD": 4500,
+                    "CT-SCAN 3DCT HEAD": 4500,
                     "X-RAY THIGH AP/LAT": 450,
                     "CEA": 1500
                 }
@@ -606,7 +686,7 @@ class MedicalRecordForm:
                 )
                 
                 if through_referral:
-                    can_submit = can_submit and doctor_name and doctor_location
+                    can_submit = can_submit and selected_doctor_data is not None
                 
                 if phone_available:
                     can_submit = can_submit and patient_phone and self.validate_phone_number(patient_phone)[0]
@@ -646,12 +726,84 @@ class MedicalRecordForm:
                     if address_available and patient_address:
                         patient.address = patient_address.strip()
                     
-                    # Create doctor object if referral
-                    referring_doctor = None
-                    if through_referral:
+                    # Create referral info if referral selected (new system)
+                    referral_info = None
+                    referring_doctor = None  # Legacy field, kept for backward compatibility
+                    
+                    if through_referral and selected_doctor_data:
+                        # Get commission rates from registered doctor
+                        commission_rates_data = selected_doctor_data.get('commission_rates', [])
+                        
+                        # Build lookup dict for commission rates by category
+                        commission_lookup = {}
+                        for cr in commission_rates_data:
+                            cat = cr.get('category', '')
+                            commission_lookup[cat] = {
+                                'type': cr.get('commission_type', CommissionType.PERCENTAGE.value),
+                                'rate': cr.get('rate', 0)
+                            }
+                        
+                        # Calculate commission for each test
+                        # IMPORTANT: Discount given to patient is deducted from doctor's commission
+                        test_commission_details = []
+                        total_commission = 0
+                        
+                        for test_name in selected_tests:
+                            original_price = TEST_PRICES[test_name]  # Standard price
+                            paid_price = test_payments.get(test_name, original_price)  # Actual amount paid
+                            discount = original_price - paid_price  # Discount given
+                            
+                            # Use original price for category determination
+                            test_category = get_test_category(test_name, original_price)
+                            
+                            # Get commission rate for this category
+                            if test_category.value in commission_lookup:
+                                cr = commission_lookup[test_category.value]
+                                comm_type = cr['type']
+                                comm_rate = cr['rate']
+                            else:
+                                # Use default rates
+                                default = DEFAULT_COMMISSION_RATES.get(test_category, {"type": CommissionType.PERCENTAGE, "rate": 0})
+                                comm_type = default["type"].value if hasattr(default["type"], 'value') else default["type"]
+                                comm_rate = default["rate"]
+                            
+                            # Calculate original commission (based on standard price)
+                            if comm_type == CommissionType.PERCENTAGE.value:
+                                original_commission = int(original_price * comm_rate / 100)
+                            else:
+                                original_commission = int(comm_rate)
+                            
+                            # Deduct discount from commission
+                            # Commission = Original Commission - Discount (but not less than 0)
+                            commission_amount = max(0, original_commission - discount)
+                            
+                            total_commission += commission_amount
+                            
+                            test_commission_details.append(TestCommissionDetail(
+                                test_name=test_name,
+                                test_category=test_category,
+                                original_price=original_price,
+                                paid_price=paid_price,
+                                discount=discount,
+                                commission_type=CommissionType(comm_type),
+                                commission_rate=float(comm_rate),
+                                original_commission=original_commission,
+                                commission_amount=commission_amount
+                            ))
+                        
+                        # Create referral info with per-test commission breakdown
+                        referral_info = DoctorReferralInfo(
+                            doctor_id=selected_doctor_data.get('doctor_id', ''),
+                            doctor_name=selected_doctor_data.get('name', ''),
+                            doctor_location=selected_doctor_data.get('location', ''),
+                            test_commissions=test_commission_details,
+                            total_commission=total_commission
+                        )
+                        
+                        # Also set legacy doctor field for backward compatibility
                         referring_doctor = Doctor(
-                            name=doctor_name.strip(), 
-                            location=doctor_location.strip()
+                            name=selected_doctor_data.get('name', ''),
+                            location=selected_doctor_data.get('location', '')
                         )
                     
                     # Create list of medical tests with actual paid prices
@@ -666,10 +818,11 @@ class MedicalRecordForm:
                         free_test_note = f"[FREE TEST: {free_test_reason}]"
                         final_comments = f"{free_test_note} {final_comments}".strip()
                     
-                    # Create medical record
+                    # Create medical record with new referral_info field
                     medical_entry = MedicalRecord(
                         patient=patient,
-                        doctor=referring_doctor,
+                        doctor=referring_doctor,  # Legacy field
+                        referral_info=referral_info,  # New field with auto-calculated commission
                         medical_tests=medical_tests_list,
                         payment=Payment(amount=total_payment),
                         date=get_ist_now(),  # Use datetime object for proper Firestore timestamp
@@ -1365,8 +1518,11 @@ class OpeningScreen:
             
             st.markdown("---")
             
-            # Tabs for different sections
-            tab1, tab2, tab3 = st.tabs(["👥 Manage Users", "⏳ Pending Approvals", "🚫 Rejected Users"])
+            # Tabs for different sections - Doctor Registry only for owners
+            if is_owner:
+                tab1, tab2, tab3, tab4 = st.tabs(["👥 Manage Users", "⏳ Pending Approvals", "🚫 Rejected Users", "👨‍⚕️ Doctor Registry"])
+            else:
+                tab1, tab2, tab3 = st.tabs(["👥 Manage Users", "⏳ Pending Approvals", "🚫 Rejected Users"])
             
             with tab1:
                 st.subheader("User Role & Status Management")
@@ -1631,9 +1787,403 @@ class OpeningScreen:
                             st.divider()
                             
                             st.divider()
+            
+            # Doctor Registry tab (Owner only)
+            if is_owner:
+                with tab4:
+                    self._render_doctor_registry()
                 
         except Exception as e:
             st.error(f"Error loading user management: {str(e)}")
+    
+    def _render_doctor_registry(self):
+        """Render the Doctor Registry management interface - Owner only"""
+        st.subheader("👨‍⚕️ Registered Doctors")
+        st.info("""
+        💡 **Why this matters:** Only you (the owner) can register doctors and set their commission rates.
+        Each doctor has **different commission rates for different test categories** (USG, X-Ray, CT-Scan, Pathology, etc.).
+        When a medical record is created with a referral, the commission is automatically calculated based on these rates.
+        """)
+        
+        # Categories config - used for both new doctor form and editing
+        categories_config = [
+            (TestCategory.USG_750, "USG-750", CommissionType.FIXED, 250),
+            (TestCategory.USG_1200, "USG-1200", CommissionType.FIXED, 300),
+            (TestCategory.XRAY_350, "X-RAY-350", CommissionType.FIXED, 100),
+            (TestCategory.XRAY_450, "X-RAY-450", CommissionType.FIXED, 100),
+            (TestCategory.XRAY_650, "X-RAY-650", CommissionType.FIXED, 150),
+            (TestCategory.ECG, "ECG", CommissionType.FIXED, 100),
+            (TestCategory.CT_SCAN, "CT-SCAN", CommissionType.PERCENTAGE, 40),
+            (TestCategory.PATH, "PATH", CommissionType.PERCENTAGE, 50),
+        ]
+        
+        # Initialize session state for selected doctor
+        if 'selected_doctor_id' not in st.session_state:
+            st.session_state.selected_doctor_id = None
+        
+        # Fetch doctors once
+        try:
+            doctors = self.db.get_docs(
+                DBCollectionNames.REGISTERED_DOCTORS.value,
+                limit=200
+            )
+        except Exception as e:
+            st.error(f"Error loading doctors: {str(e)}")
+            doctors = []
+        
+        # Show test categories reference
+        with st.expander("📋 Test Categories Reference", expanded=False):
+            st.markdown("""
+            | Category | Description | Default Rate |
+            |----------|-------------|--------------|
+            | **USG-750** | Ultrasound tests at ₹750 | ₹250 fixed |
+            | **USG-1200** | Ultrasound tests at ₹1200 | ₹300 fixed |
+            | **X-RAY-350** | X-Ray tests up to ₹350 | ₹100 fixed |
+            | **X-RAY-450** | X-Ray tests ₹351-450 | ₹100 fixed |
+            | **X-RAY-650** | X-Ray tests above ₹450 | ₹150 fixed |
+            | **ECG** | ECG tests | ₹100 fixed |
+            | **CT-SCAN** | All CT Scan tests | 40% |
+            | **PATH** | Pathology/Blood tests | 50% |
+            """)
+        
+        # Add new doctor form
+        with st.expander("➕ Register New Doctor", expanded=False):
+            st.markdown("#### Basic Information")
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                new_doctor_name = st.text_input(
+                    "Doctor's Full Name *",
+                    placeholder="Dr. [Name]",
+                    key="new_doctor_name"
+                )
+                new_doctor_location = st.text_input(
+                    "Clinic/Hospital Location *",
+                    placeholder="Clinic name and location",
+                    key="new_doctor_location"
+                )
+            
+            with col2:
+                new_doctor_phone = st.text_input(
+                    "Phone Number (optional)",
+                    placeholder="+91 98765 43210",
+                    key="new_doctor_phone"
+                )
+                new_doctor_notes = st.text_area(
+                    "Notes (optional)",
+                    placeholder="Any notes about this doctor...",
+                    key="new_doctor_notes",
+                    height=68
+                )
+            
+            st.markdown("---")
+            st.markdown("#### Commission Rates by Test Category")
+            st.caption("Set the commission rate for each test category. Leave as default if not specified.")
+            
+            # Create a grid for commission rates
+            col1, col2, col3, col4 = st.columns(4)
+            
+            for i, (cat, label, default_type, default_rate) in enumerate(categories_config):
+                col = [col1, col2, col3, col4][i % 4]
+                with col:
+                    st.markdown(f"**{label}**")
+                    rate_type = st.selectbox(
+                        f"Type",
+                        options=[CommissionType.FIXED, CommissionType.PERCENTAGE],
+                        index=0 if default_type == CommissionType.FIXED else 1,
+                        key=f"new_doc_{cat.value}_type",
+                        label_visibility="collapsed"
+                    )
+                    if rate_type == CommissionType.FIXED:
+                        rate_val = st.number_input(
+                            f"₹",
+                            min_value=0,
+                            max_value=10000,
+                            value=default_rate if default_type == CommissionType.FIXED else 100,
+                            step=10,
+                            key=f"new_doc_{cat.value}_rate",
+                            label_visibility="collapsed"
+                        )
+                    else:
+                        rate_val = st.number_input(
+                            f"%",
+                            min_value=0.0,
+                            max_value=100.0,
+                            value=float(default_rate) if default_type == CommissionType.PERCENTAGE else 10.0,
+                            step=1.0,
+                            key=f"new_doc_{cat.value}_rate_pct",
+                            label_visibility="collapsed"
+                        )
+                    st.caption(f"{'₹' if rate_type == CommissionType.FIXED else ''}{rate_val}{'%' if rate_type == CommissionType.PERCENTAGE else ''}")
+            
+            st.markdown("---")
+            
+            # Register button
+            can_register = new_doctor_name and len(new_doctor_name.strip()) >= 2 and new_doctor_location and len(new_doctor_location.strip()) >= 2
+            
+            if st.button("✅ Register Doctor", disabled=not can_register, key="register_doctor_btn", type="primary"):
+                try:
+                    import uuid
+                    doctor_id = str(uuid.uuid4())[:8]
+                    
+                    # Collect commission rates from inputs
+                    commission_rates = []
+                    for cat, label, default_type, default_rate in categories_config:
+                        rate_type_key = f"new_doc_{cat.value}_type"
+                        rate_type = st.session_state.get(rate_type_key, default_type)
+                        
+                        if rate_type == CommissionType.FIXED:
+                            rate_val = st.session_state.get(f"new_doc_{cat.value}_rate", default_rate)
+                        else:
+                            rate_val = st.session_state.get(f"new_doc_{cat.value}_rate_pct", default_rate)
+                        
+                        commission_rates.append(TestCommissionRate(
+                            category=cat,
+                            commission_type=rate_type,
+                            rate=float(rate_val)
+                        ))
+                    
+                    new_doctor = RegisteredDoctor(
+                        doctor_id=doctor_id,
+                        name=new_doctor_name.strip(),
+                        location=new_doctor_location.strip(),
+                        phone=new_doctor_phone.strip() if new_doctor_phone else None,
+                        commission_rates=commission_rates,
+                        is_active=True,
+                        created_by_email=st.session_state.user_email,
+                        notes=new_doctor_notes.strip() if new_doctor_notes else None
+                    )
+                    
+                    self.db.create_doc(
+                        DBCollectionNames.REGISTERED_DOCTORS.value,
+                        new_doctor.model_dump(),
+                        doc_id=doctor_id
+                    )
+                    
+                    st.success(f"✅ Successfully registered Dr. {new_doctor_name}")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error registering doctor: {str(e)}")
+        
+        st.markdown("---")
+        
+        # List existing doctors
+        st.markdown("### 📋 Registered Doctors List")
+        
+        if not doctors:
+            st.info("No doctors registered yet. Add your first doctor above.")
+        else:
+            # Filter options
+            show_inactive = st.checkbox("Show inactive doctors", value=False, key="show_inactive_doctors")
+            
+            active_doctors = [d for d in doctors if d.get('is_active', True)]
+            inactive_doctors = [d for d in doctors if not d.get('is_active', True)]
+            
+            st.caption(f"📊 {len(active_doctors)} active, {len(inactive_doctors)} inactive doctors")
+            
+            display_doctors = doctors if show_inactive else active_doctors
+            
+            # Build doctor options for selectbox
+            doctor_options = {f"{d.get('name', 'Unknown')} - {d.get('location', '')}": d.get('id') for d in display_doctors}
+            doctor_options_list = ["-- Select a doctor to edit --"] + list(doctor_options.keys())
+            
+            # Doctor selector
+            selected_option = st.selectbox(
+                "Select doctor to view/edit",
+                options=doctor_options_list,
+                key="doctor_selector"
+            )
+            
+            # Edit selected doctor FIRST (only render widgets for the selected doctor)
+            if selected_option != "-- Select a doctor to edit --":
+                selected_doctor_id = doctor_options.get(selected_option)
+                selected_doctor = next((d for d in doctors if d.get('id') == selected_doctor_id), None)
+                
+                if selected_doctor:
+                    st.markdown(f"### ✏️ Editing: Dr. {selected_doctor.get('name', 'Unknown')}")
+                    
+                    col1, col2 = st.columns([2, 1])
+                    
+                    with col1:
+                        st.markdown(f"**📍 Location:** {selected_doctor.get('location', 'Unknown')}")
+                        if selected_doctor.get('phone'):
+                            st.markdown(f"**📞 Phone:** {selected_doctor.get('phone')}")
+                        if selected_doctor.get('notes'):
+                            st.markdown(f"**📝 Notes:** {selected_doctor.get('notes')}")
+                    
+                    with col2:
+                        is_active = selected_doctor.get('is_active', True)
+                        # Activate/Deactivate button
+                        if is_active:
+                            if st.button("🚫 Deactivate Doctor", key="deactivate_selected"):
+                                self.db.update_doc(
+                                    DBCollectionNames.REGISTERED_DOCTORS.value,
+                                    selected_doctor.get('id'),
+                                    {"is_active": False}
+                                )
+                                st.rerun()
+                        else:
+                            if st.button("✅ Activate Doctor", key="activate_selected"):
+                                self.db.update_doc(
+                                    DBCollectionNames.REGISTERED_DOCTORS.value,
+                                    selected_doctor.get('id'),
+                                    {"is_active": True}
+                                )
+                                st.rerun()
+                    
+                    st.markdown("---")
+                    st.markdown("**💰 Edit Commission Rates:**")
+                    
+                    # Display and edit commission rates - only for selected doctor
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    commission_rates = selected_doctor.get('commission_rates', [])
+                    rate_lookup = {cr.get('category'): cr for cr in commission_rates}
+                    
+                    updated_rates = []
+                    for i, (cat, label, default_type, default_rate) in enumerate(categories_config):
+                        col = [col1, col2, col3, col4][i % 4]
+                        existing = rate_lookup.get(cat.value, {})
+                        current_type = existing.get('commission_type', default_type.value if hasattr(default_type, 'value') else default_type)
+                        current_rate = existing.get('rate', default_rate)
+                        
+                        with col:
+                            st.markdown(f"**{label}**")
+                            new_type = st.selectbox(
+                                f"Type",
+                                options=[CommissionType.FIXED.value, CommissionType.PERCENTAGE.value],
+                                index=0 if current_type == CommissionType.FIXED.value else 1,
+                                key=f"edit_{cat.value}_type",
+                                label_visibility="collapsed"
+                            )
+                            if new_type == CommissionType.FIXED.value:
+                                new_rate = st.number_input(
+                                    f"₹",
+                                    min_value=0,
+                                    max_value=10000,
+                                    value=int(current_rate) if current_type == CommissionType.FIXED.value else 100,
+                                    step=10,
+                                    key=f"edit_{cat.value}_rate",
+                                    label_visibility="collapsed"
+                                )
+                            else:
+                                new_rate = st.number_input(
+                                    f"%",
+                                    min_value=0.0,
+                                    max_value=100.0,
+                                    value=float(current_rate) if current_type == CommissionType.PERCENTAGE.value else 10.0,
+                                    step=1.0,
+                                    key=f"edit_{cat.value}_rate_pct",
+                                    label_visibility="collapsed"
+                                )
+                            
+                            updated_rates.append({
+                                'category': cat.value,
+                                'commission_type': new_type,
+                                'rate': float(new_rate)
+                            })
+                    
+                    # Save button for commission rates
+                    if st.button("💾 Save Commission Rates", key="save_rates_selected", type="primary"):
+                        try:
+                            self.db.update_doc(
+                                DBCollectionNames.REGISTERED_DOCTORS.value,
+                                selected_doctor.get('id'),
+                                {"commission_rates": updated_rates}
+                            )
+                            st.success("✅ Commission rates updated!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error updating rates: {str(e)}")
+                    
+                    st.markdown("---")
+            
+            # Display all doctors as a simple list (read-only, fast)
+            st.markdown("#### All Doctors")
+            for doctor in display_doctors:
+                is_active = doctor.get('is_active', True)
+                status_icon = "🟢" if is_active else "🔴"
+                commission_rates = doctor.get('commission_rates', [])
+                
+                # Build commission summary for all rates
+                rate_summary = []
+                for cr in commission_rates:
+                    cat = cr.get('category', '')
+                    ctype = cr.get('commission_type', '')
+                    rate = cr.get('rate', 0)
+                    if ctype == CommissionType.PERCENTAGE.value:
+                        rate_summary.append(f"{cat}:{rate}%")
+                    else:
+                        rate_summary.append(f"{cat}:₹{int(rate)}")
+                
+                summary_text = " | ".join(rate_summary) if rate_summary else "No rates set"
+                phone_text = f" 📞 {doctor.get('phone')}" if doctor.get('phone') else ""
+                
+                st.markdown(f"{status_icon} **Dr. {doctor.get('name', 'Unknown')}** - {doctor.get('location', '')}{phone_text}")
+                st.caption(f"   Rates: {summary_text}")
+
+
+# Cached function to compute referral report data
+@st.cache_data(ttl=300)  # Cache for 5 minutes
+def compute_referral_report(records: tuple) -> dict:
+    """
+    Compute referral report data from medical records.
+    Groups commissions by doctor with detailed breakdown.
+    
+    Args:
+        records: Tuple of medical records (must be tuple for caching)
+        
+    Returns:
+        dict with doctor-wise commission breakdown
+    """
+    referral_data = {}
+    
+    for record in records:
+        referral_info = record.get('referral_info', {})
+        if not referral_info or not isinstance(referral_info, dict):
+            continue
+            
+        doctor_name = referral_info.get('doctor_name', 'Unknown')
+        doctor_id = referral_info.get('doctor_id', '')
+        doctor_location = referral_info.get('doctor_location', '')
+        commission = referral_info.get('total_commission', 0)
+        
+        if commission <= 0:
+            continue
+        
+        # Get patient info
+        patient = record.get('patient', {})
+        patient_name = patient.get('name', 'Unknown') if isinstance(patient, dict) else 'Unknown'
+        
+        # Get payment info
+        payment = record.get('payment', {})
+        payment_amount = payment.get('amount', 0) if isinstance(payment, dict) else 0
+        
+        # Get test details
+        test_commissions = referral_info.get('test_commissions', [])
+        
+        if doctor_name not in referral_data:
+            referral_data[doctor_name] = {
+                'doctor_id': doctor_id,
+                'location': doctor_location,
+                'total_commission': 0,
+                'total_revenue': 0,
+                'patient_count': 0,
+                'patients': []
+            }
+        
+        referral_data[doctor_name]['total_commission'] += commission
+        referral_data[doctor_name]['total_revenue'] += payment_amount
+        referral_data[doctor_name]['patient_count'] += 1
+        referral_data[doctor_name]['patients'].append({
+            'name': patient_name,
+            'payment': payment_amount,
+            'commission': commission,
+            'tests': test_commissions
+        })
+    
+    return referral_data
+
 
 class DailyReportPage:
     """Daily Report page showing total collections and expenses for the day or month"""
@@ -1649,12 +2199,24 @@ class DailyReportPage:
         user_role = st.session_state.get('user_role', '')
         return is_project_owner(user_email) or user_role == UserRole.ADMIN.value
     
+    def can_view_commissions(self) -> bool:
+        """Check if current user can view commission data (Admin or Manager only)"""
+        from utils import is_project_owner
+        user_email = st.session_state.get('user_email', '')
+        user_role = st.session_state.get('user_role', '')
+        return (is_project_owner(user_email) or 
+                user_role == UserRole.ADMIN.value or 
+                user_role == UserRole.MANAGER.value)
+    
     def fetch_monthly_collections(self, year: int, month: int):
         """Fetch all medical records for a specific month
         
         Args:
             year: The year (e.g., 2026)
             month: The month (1-12)
+            
+        Returns:
+            tuple: (records, total_collection, total_commission)
         """
         try:
             records = db.get_docs_for_month(
@@ -1665,20 +2227,26 @@ class DailyReportPage:
                 limit=10000
             )
             
-            # Calculate total collection
+            # Calculate total collection and commission
             total_collection = 0
+            total_commission = 0
             for record in records:
                 payment = record.get('payment', {})
                 if isinstance(payment, dict):
                     total_collection += payment.get('amount', 0)
                 elif hasattr(payment, 'amount'):
                     total_collection += payment.amount
+                
+                # Extract commission from referral_info
+                referral_info = record.get('referral_info', {})
+                if referral_info and isinstance(referral_info, dict):
+                    total_commission += referral_info.get('total_commission', 0)
             
-            return records, total_collection
+            return records, total_collection, total_commission
             
         except Exception as e:
             logger.error(f"Error fetching monthly collections: {str(e)}")
-            return [], 0
+            return [], 0, 0
     
     def fetch_monthly_expenses(self, year: int, month: int):
         """Fetch all expenses for a specific month
@@ -1719,6 +2287,9 @@ class DailyReportPage:
         
         Args:
             target_date: The date to fetch records for. If None, uses today's date.
+            
+        Returns:
+            tuple: (records, total_collection, total_commission)
         """
         try:
             if target_date is None:
@@ -1737,20 +2308,26 @@ class DailyReportPage:
                     limit=1000
                 )
             
-            # Calculate total collection
+            # Calculate total collection and commission
             total_collection = 0
+            total_commission = 0
             for record in records:
                 payment = record.get('payment', {})
                 if isinstance(payment, dict):
                     total_collection += payment.get('amount', 0)
                 elif hasattr(payment, 'amount'):
                     total_collection += payment.amount
+                
+                # Extract commission from referral_info
+                referral_info = record.get('referral_info', {})
+                if referral_info and isinstance(referral_info, dict):
+                    total_commission += referral_info.get('total_commission', 0)
             
-            return records, total_collection
+            return records, total_collection, total_commission
             
         except Exception as e:
             logger.error(f"Error fetching daily collections: {str(e)}")
-            return [], 0
+            return [], 0, 0
     
     def fetch_daily_expenses(self, target_date: datetime = None):
         """Fetch all expenses for a specific date using server-side date filtering
@@ -1793,16 +2370,27 @@ class DailyReportPage:
         
         # Check if user is admin
         is_admin = self.is_admin_user()
+        can_view_commissions = self.can_view_commissions()
         
         # Get today's date
         today = get_ist_now()
         today_date = today.date()
         
-        # Report type selection (Monthly only for admins)
+        # Report type selection based on user role
+        # - Admins: Daily, Monthly, Referral Report
+        # - Managers: Daily, Referral Report
+        # - Others: Daily only
         if is_admin:
+            report_options = ["Daily Report", "Monthly Report", "Referral Report"]
+        elif can_view_commissions:
+            report_options = ["Daily Report", "Referral Report"]
+        else:
+            report_options = ["Daily Report"]
+        
+        if len(report_options) > 1:
             report_type = st.radio(
                 "Report Type",
-                options=["Daily Report", "Monthly Report"],
+                options=report_options,
                 horizontal=True,
                 key="report_type_selector"
             )
@@ -1811,6 +2399,8 @@ class DailyReportPage:
         
         if report_type == "Monthly Report":
             self._render_monthly_report(is_admin, today, today_date)
+        elif report_type == "Referral Report":
+            self._render_referral_report(is_admin, today, today_date)
         else:
             self._render_daily_report(is_admin, today, today_date)
     
@@ -1854,7 +2444,7 @@ class DailyReportPage:
         
         # Fetch data first for summary
         with st.spinner("Loading data..."):
-            records, total_collection = self.fetch_daily_collections(target_date)
+            records, total_collection, total_commission = self.fetch_daily_collections(target_date)
             expenses, total_expenses = self.fetch_daily_expenses(target_date)
         
         # Summary section at the top - Net Amount in a styled card
@@ -1867,6 +2457,10 @@ class DailyReportPage:
         status_text = "Money In" if is_profit else "Money Out"
         status_icon = "💰" if is_profit else "💸"
         
+        # Commission info for subtitle (only visible to Admin/Manager)
+        can_view_commissions = self.can_view_commissions()
+        commission_text = f" · ₹{total_commission:,} commission" if (total_commission > 0 and can_view_commissions) else ""
+        
         st.markdown(f"""
         <div style="
             background: {summary_bg};
@@ -1877,7 +2471,7 @@ class DailyReportPage:
         ">
             <div style="color: #888; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">Today's Balance</div>
             <div style="color: {summary_color}; font-size: 34px; font-weight: 700;">₹{net_amount:,} <span style="font-size: 15px; font-weight: 500;">{status_icon} {status_text}</span></div>
-            <div style="color: #666; font-size: 12px; margin-top: 6px;">₹{total_collection:,} income · ₹{total_expenses:,} expenses</div>
+            <div style="color: #666; font-size: 12px; margin-top: 6px;">₹{total_collection:,} income · ₹{total_expenses:,} expenses{commission_text}</div>
         </div>
         """, unsafe_allow_html=True)
         
@@ -1922,6 +2516,17 @@ class DailyReportPage:
                             if test_names:
                                 st.caption(f"Tests: {', '.join(test_names)}")
                         
+                        # Show referral info (doctor name for all, commission only for managers+)
+                        referral_info = record.get('referral_info', {})
+                        if referral_info and isinstance(referral_info, dict):
+                            doctor_name = referral_info.get('doctor_name', '')
+                            if doctor_name:
+                                if can_view_commissions:
+                                    commission = referral_info.get('total_commission', 0)
+                                    st.caption(f"🤝 Referred by: Dr. {doctor_name} (₹{commission:,} commission)")
+                                else:
+                                    st.caption(f"🤝 Referred by: Dr. {doctor_name}")
+                        
                         if i < len(records) - 1:
                             st.divider()
         
@@ -1957,6 +2562,40 @@ class DailyReportPage:
                         
                         if i < len(expenses) - 1:
                             st.divider()
+        
+        # Commission section (only show if there are commissions AND user is Admin/Manager)
+        if total_commission > 0 and can_view_commissions:
+            st.markdown("---")
+            st.markdown("### 🤝 Doctor Commissions")
+            
+            commission_label = "Total Commission Due Today" if (not is_admin or selected_date == today_date) else f"Total Commission Due ({selected_date.strftime('%d %b %Y')})"
+            st.metric(
+                label=commission_label,
+                value=f"₹{total_commission:,}",
+                help="Total commission payable to referring doctors"
+            )
+            
+            # Count referral records
+            referral_count = sum(1 for r in records if r.get('referral_info'))
+            st.info(f"📋 {referral_count} referral(s) with commission")
+            
+            # Show commission breakdown by doctor
+            with st.expander("📄 View Commission Details", expanded=False):
+                # Group commissions by doctor
+                commissions_by_doctor = {}
+                for record in records:
+                    referral_info = record.get('referral_info', {})
+                    if referral_info and isinstance(referral_info, dict):
+                        doctor_name = referral_info.get('doctor_name', 'Unknown')
+                        commission = referral_info.get('total_commission', 0)
+                        if commission > 0:
+                            if doctor_name not in commissions_by_doctor:
+                                commissions_by_doctor[doctor_name] = {'total': 0, 'count': 0}
+                            commissions_by_doctor[doctor_name]['total'] += commission
+                            commissions_by_doctor[doctor_name]['count'] += 1
+                
+                for doctor_name, data in sorted(commissions_by_doctor.items(), key=lambda x: x[1]['total'], reverse=True):
+                    st.markdown(f"**Dr. {doctor_name}**: ₹{data['total']:,} ({data['count']} patient(s))")
         
         # Refresh button
         st.markdown("---")
@@ -2014,11 +2653,12 @@ class DailyReportPage:
         
         # Fetch monthly data
         with st.spinner("Loading monthly data..."):
-            records, total_collection = self.fetch_monthly_collections(selected_year, selected_month)
+            records, total_collection, total_commission = self.fetch_monthly_collections(selected_year, selected_month)
             expenses, total_expenses = self.fetch_monthly_expenses(selected_year, selected_month)
         
         # Summary section at the top - Net Amount in a styled card
-        net_amount = total_collection - total_expenses
+        # Net profit = Income - Expenses - Commission
+        net_amount = total_collection - total_expenses - total_commission
         is_profit = net_amount >= 0
         
         # Styled summary card
@@ -2026,6 +2666,9 @@ class DailyReportPage:
         summary_bg = "rgba(155, 89, 182, 0.1)" if is_profit else "rgba(231, 76, 60, 0.1)"
         status_text = "Net Profit" if is_profit else "Net Loss"
         status_icon = "📈" if is_profit else "📉"
+        
+        # Commission info for subtitle
+        commission_text = f" · ₹{total_commission:,} commission" if total_commission > 0 else ""
         
         st.markdown(f"""
         <div style="
@@ -2037,7 +2680,7 @@ class DailyReportPage:
         ">
             <div style="color: #888; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">Monthly Balance - {selected_month_name} {selected_year}</div>
             <div style="color: {summary_color}; font-size: 34px; font-weight: 700;">₹{net_amount:,} <span style="font-size: 15px; font-weight: 500;">{status_icon} {status_text}</span></div>
-            <div style="color: #666; font-size: 12px; margin-top: 6px;">₹{total_collection:,} income · ₹{total_expenses:,} expenses</div>
+            <div style="color: #666; font-size: 12px; margin-top: 6px;">₹{total_collection:,} income · ₹{total_expenses:,} expenses{commission_text}</div>
         </div>
         """, unsafe_allow_html=True)
         
@@ -2141,11 +2784,167 @@ class DailyReportPage:
                         
                         st.divider()
         
+        # Commission section (only show if there are commissions)
+        if total_commission > 0:
+            st.markdown("---")
+            st.markdown("### 🤝 Doctor Commissions")
+            
+            st.metric(
+                label=f"Total Commission Due - {selected_month_name} {selected_year}",
+                value=f"₹{total_commission:,}",
+                help="Total commission payable to referring doctors this month"
+            )
+            
+            # Count referral records
+            referral_count = sum(1 for r in records if r.get('referral_info'))
+            st.info(f"📋 {referral_count} referral(s) with commission this month")
+            
+            # Show commission breakdown by doctor
+            with st.expander("📄 View Commission Details by Doctor", expanded=False):
+                # Group commissions by doctor
+                commissions_by_doctor = {}
+                for record in records:
+                    referral_info = record.get('referral_info', {})
+                    if referral_info and isinstance(referral_info, dict):
+                        doctor_name = referral_info.get('doctor_name', 'Unknown')
+                        commission = referral_info.get('total_commission', 0)
+                        if commission > 0:
+                            if doctor_name not in commissions_by_doctor:
+                                commissions_by_doctor[doctor_name] = {'total': 0, 'count': 0}
+                            commissions_by_doctor[doctor_name]['total'] += commission
+                            commissions_by_doctor[doctor_name]['count'] += 1
+                
+                st.markdown("**Commission Summary by Doctor:**")
+                for doctor_name, data in sorted(commissions_by_doctor.items(), key=lambda x: x[1]['total'], reverse=True):
+                    st.markdown(f"• **Dr. {doctor_name}**: ₹{data['total']:,} ({data['count']} patient(s))")
+        
         # Refresh button
         st.markdown("---")
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             if st.button("🔄 Refresh Data", use_container_width=True, key="refresh_monthly_report"):
+                st.rerun()
+    
+    def _render_referral_report(self, is_admin: bool, today: datetime, today_date):
+        """Render the referral report view (Manager and Admin only)"""
+        import calendar
+        
+        # Header
+        st.markdown("""
+        <div style="text-align: center; padding: 20px 0;">
+            <h1 style="color: #e67e22; margin-bottom: 10px;">🤝 Referral Report</h1>
+            <p style="color: #666; font-size: 16px;">Doctor-wise commission breakdown</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Month and Year selection
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            month_names = list(calendar.month_name)[1:]
+            current_month_index = today.month - 1
+            selected_month_name = st.selectbox(
+                "Select Month",
+                options=month_names,
+                index=current_month_index,
+                key="referral_report_month"
+            )
+            selected_month = month_names.index(selected_month_name) + 1
+        
+        with col2:
+            current_year = today.year
+            years = list(range(2024, current_year + 1))
+            selected_year = st.selectbox(
+                "Select Year",
+                options=years,
+                index=len(years) - 1,
+                key="referral_report_year"
+            )
+        
+        # Validate that selected month/year is not in the future
+        if selected_year > current_year or (selected_year == current_year and selected_month > today.month):
+            st.warning("⚠️ Cannot view reports for future months.")
+            return
+        
+        st.markdown(f"### 📅 {selected_month_name} {selected_year}")
+        st.markdown("---")
+        
+        # Fetch monthly data with caching
+        with st.spinner("Loading referral data..."):
+            records, total_collection, total_commission = self.fetch_monthly_collections(selected_year, selected_month)
+            
+            # Convert records to tuple for caching (lists are not hashable)
+            records_tuple = tuple(
+                {k: (tuple(v) if isinstance(v, list) else v) for k, v in r.items()}
+                for r in records
+            )
+            
+            # Use cached computation
+            referral_data = compute_referral_report(records_tuple)
+        
+        # Summary card
+        doctor_count = len(referral_data)
+        total_referral_revenue = sum(d['total_revenue'] for d in referral_data.values())
+        total_patients = sum(d['patient_count'] for d in referral_data.values())
+        
+        st.markdown(f"""
+        <div style="
+            background: rgba(230, 126, 34, 0.1);
+            border: 2px solid #e67e22;
+            border-radius: 10px;
+            padding: 18px 24px;
+            text-align: center;
+        ">
+            <div style="color: #888; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">Referral Summary - {selected_month_name} {selected_year}</div>
+            <div style="color: #e67e22; font-size: 34px; font-weight: 700;">₹{total_commission:,}</div>
+            <div style="color: #666; font-size: 12px; margin-top: 6px;">{doctor_count} doctor(s) · {total_patients} patient(s) · ₹{total_referral_revenue:,} revenue from referrals</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("---")
+        
+        if not referral_data:
+            st.info("📭 No referral data found for this month.")
+        else:
+            # Sort doctors by commission (highest first)
+            sorted_doctors = sorted(referral_data.items(), key=lambda x: x[1]['total_commission'], reverse=True)
+            
+            st.markdown("### 👨‍⚕️ Doctor-wise Breakdown")
+            
+            for doctor_name, data in sorted_doctors:
+                location_text = f" ({data['location']})" if data['location'] else ""
+                commission_pct = (data['total_commission'] / data['total_revenue'] * 100) if data['total_revenue'] > 0 else 0
+                
+                with st.expander(f"**Dr. {doctor_name}**{location_text} — ₹{data['total_commission']:,} commission", expanded=False):
+                    # Doctor summary metrics
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Total Commission", f"₹{data['total_commission']:,}")
+                    with col2:
+                        st.metric("Patients Referred", data['patient_count'])
+                    with col3:
+                        st.metric("Revenue Generated", f"₹{data['total_revenue']:,}")
+                    
+                    st.caption(f"Average commission rate: {commission_pct:.1f}%")
+                    
+                    # Patient details
+                    st.markdown("**Patient Details:**")
+                    for i, patient in enumerate(data['patients'], 1):
+                        test_names = []
+                        if patient.get('tests'):
+                            for t in patient['tests']:
+                                if isinstance(t, dict):
+                                    test_names.append(t.get('test_name', ''))
+                        tests_text = f" ({', '.join(test_names)})" if test_names else ""
+                        st.caption(f"{i}. {patient['name']}: ₹{patient['payment']:,} → ₹{patient['commission']:,} commission{tests_text}")
+        
+        # Refresh button
+        st.markdown("---")
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            if st.button("🔄 Refresh Data", use_container_width=True, key="refresh_referral_report"):
+                # Clear the cache for this report
+                compute_referral_report.clear()
                 st.rerun()
 
 
@@ -2214,7 +3013,7 @@ class PrimeLabsUI:
                         # Medical form keys
                         'patient_name', 'patient_phone', 'patient_address',
                         'phone_checkbox', 'address_checkbox', 'referral_checkbox',
-                        'doctor_name', 'doctor_location', 'test_type', 'test_types', 'payment_amount',
+                        'doctor_name', 'doctor_location', 'selected_doctor', 'test_type', 'test_types', 'payment_amount',
                         'comments', 'form_errors', 'processing_submission', 
                         'show_success', 'last_record',
                         # Expense form keys

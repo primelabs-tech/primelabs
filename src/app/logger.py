@@ -17,21 +17,33 @@ class Logger:
         )
         self.logger = logging.getLogger()
 
+    def _extract_logging_params(self, kwargs: dict) -> dict:
+        """Extract reserved logging parameters from kwargs"""
+        logging_params = {}
+        for key in ('exc_info', 'stack_info', 'stacklevel'):
+            if key in kwargs:
+                logging_params[key] = kwargs.pop(key)
+        return logging_params
+
     def info(self, message: str, **kwargs: Any) -> None:
         """Log info level message"""
-        self.logger.info(message, extra=self._get_extra_fields(**kwargs))
+        log_params = self._extract_logging_params(kwargs)
+        self.logger.info(message, extra=self._get_extra_fields(**kwargs), **log_params)
         
     def error(self, message: str, **kwargs: Any) -> None:
         """Log error level message"""
-        self.logger.error(message, extra=self._get_extra_fields(**kwargs))
+        log_params = self._extract_logging_params(kwargs)
+        self.logger.error(message, extra=self._get_extra_fields(**kwargs), **log_params)
 
     def warning(self, message: str, **kwargs: Any) -> None:
         """Log warning level message"""
-        self.logger.warning(message, extra=self._get_extra_fields(**kwargs))
+        log_params = self._extract_logging_params(kwargs)
+        self.logger.warning(message, extra=self._get_extra_fields(**kwargs), **log_params)
 
     def debug(self, message: str, **kwargs: Any) -> None:
         """Log debug level message"""
-        self.logger.debug(message, extra=self._get_extra_fields(**kwargs))
+        log_params = self._extract_logging_params(kwargs)
+        self.logger.debug(message, extra=self._get_extra_fields(**kwargs), **log_params)
 
     def _get_extra_fields(self, **kwargs: Any) -> dict:
         """Get extra fields for logging"""
