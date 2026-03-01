@@ -72,7 +72,8 @@ class Payment(BaseModel):
 
 class MedicalRecord(DatabaseRecord):
     patient: Patient = Field(description="Patient who underwent the medical test")
-    doctor: Optional[Doctor] = Field(description="Doctor who referred the patient", default=None)
+    doctor: Optional[Doctor] = Field(description="Doctor who referred the patient (legacy field)", default=None)
+    referral_info: Optional["DoctorReferralInfo"] = Field(description="Referral info from registered doctor", default=None)
     medical_tests: List[MedicalTest] = Field(description="Medical tests performed on the patient")
     payment: Payment = Field(description="Payment made for the medical tests")
     comments : str = Field(description="Comments on the medical entry", default=None)
@@ -161,6 +162,124 @@ class ReferralRecord(DatabaseRecord):
     comments: str = Field(description="Comments on the referral", default=None)
 
 
+class CommissionType(StrEnum):
+    """Commission calculation type"""
+    PERCENTAGE = "Percentage"  # Commission is a percentage of test price
+    FIXED = "Fixed"  # Fixed amount per test
+
+
+class TestCategory(StrEnum):
+    """
+    Test categories for commission calculation.
+    Based on the doctor commission sheet structure.
+    """
+    USG_750 = "USG-750"      # Ultrasound at ₹750
+    USG_1200 = "USG-1200"    # Ultrasound at ₹1200
+    XRAY_350 = "X-RAY-350"   # X-Ray at ₹350
+    XRAY_450 = "X-RAY-450"   # X-Ray at ₹450
+    XRAY_650 = "X-RAY-650"   # X-Ray at ₹650
+    ECG = "ECG"              # ECG
+    CT_SCAN = "CT-SCAN"      # CT Scan (usually percentage based)
+    PATH = "PATH"            # Pathology/Blood tests (usually percentage based)
+
+
+# Default commission rates structure (can be customized per doctor)
+DEFAULT_COMMISSION_RATES = {
+    TestCategory.USG_750: {"type": CommissionType.FIXED, "rate": 250},
+    TestCategory.USG_1200: {"type": CommissionType.FIXED, "rate": 300},
+    TestCategory.XRAY_350: {"type": CommissionType.FIXED, "rate": 100},
+    TestCategory.XRAY_450: {"type": CommissionType.FIXED, "rate": 100},
+    TestCategory.XRAY_650: {"type": CommissionType.FIXED, "rate": 150},
+    TestCategory.ECG: {"type": CommissionType.FIXED, "rate": 100},
+    TestCategory.CT_SCAN: {"type": CommissionType.PERCENTAGE, "rate": 40},
+    TestCategory.PATH: {"type": CommissionType.PERCENTAGE, "rate": 50},
+}
+
+
+class TestCommissionRate(BaseModel):
+    """Commission rate for a specific test category"""
+    category: TestCategory = Field(description="Test category")
+    commission_type: CommissionType = Field(description="Percentage or Fixed")
+    rate: float = Field(description="Rate value (% or fixed amount in rupees)")
+    
+    def calculate_commission(self, test_price: int) -> int:
+        """Calculate commission for this test"""
+        if self.commission_type == CommissionType.PERCENTAGE:
+            return int(test_price * self.rate / 100)
+        else:  # Fixed
+            return int(self.rate)
+
+
+class RegisteredDoctor(BaseModel):
+    """
+    Registered doctor in the system - ONLY Admin can create/modify.
+    This prevents fraud by locking commission rates at the admin level.
+    
+    Each doctor has commission rates for each test category.
+    """
+    doctor_id: str = Field(description="Unique identifier for the doctor")
+    name: str = Field(description="Full name of the doctor")
+    location: str = Field(description="Clinic/Hospital location")
+    phone: Optional[str] = Field(description="Phone number", default=None)
+    
+    # Commission rates by test category
+    commission_rates: List[TestCommissionRate] = Field(
+        description="Commission rates for each test category",
+        default_factory=list
+    )
+    
+    is_active: bool = Field(description="Whether the doctor is currently active", default=True)
+    created_at: datetime = Field(description="When the doctor was registered", default_factory=get_ist_now)
+    created_by_email: str = Field(description="Admin who registered this doctor")
+    notes: Optional[str] = Field(description="Admin notes about this doctor", default=None)
+    
+    def get_commission_for_category(self, category: TestCategory, test_price: int) -> tuple:
+        """
+        Get commission for a specific test category.
+        Returns (commission_amount, commission_type, rate)
+        """
+        for cr in self.commission_rates:
+            if cr.category == category:
+                return (cr.calculate_commission(test_price), cr.commission_type, cr.rate)
+        
+        # Fallback to default if category not found
+        default = DEFAULT_COMMISSION_RATES.get(category, {"type": CommissionType.PERCENTAGE, "rate": 0})
+        if default["type"] == CommissionType.PERCENTAGE:
+            commission = int(test_price * default["rate"] / 100)
+        else:
+            commission = int(default["rate"])
+        return (commission, default["type"], default["rate"])
+
+
+class TestCommissionDetail(BaseModel):
+    """Detail of commission for a single test in a referral"""
+    test_name: str = Field(description="Name of the test")
+    test_category: TestCategory = Field(description="Category of the test")
+    test_price: int = Field(description="Price paid for the test")
+    commission_type: CommissionType = Field(description="Commission type used")
+    commission_rate: float = Field(description="Commission rate used")
+    commission_amount: int = Field(description="Calculated commission amount")
+
+
+class DoctorReferralInfo(BaseModel):
+    """
+    Referral information stored with medical record.
+    Links to a registered doctor and stores commission breakdown by test.
+    """
+    doctor_id: str = Field(description="ID of the registered doctor")
+    doctor_name: str = Field(description="Name of the doctor (denormalized for display)")
+    doctor_location: str = Field(description="Location of the doctor (denormalized for display)")
+    
+    # Commission breakdown by test
+    test_commissions: List[TestCommissionDetail] = Field(
+        description="Commission details for each test",
+        default_factory=list
+    )
+    
+    # Total commission (sum of all test commissions)
+    total_commission: int = Field(description="Total commission amount for all tests")
+
+
 class DBCollectionNames(StrEnum):
     MEDICAL_RECORDS_PROD = "medical_records"
     MEDICAL_RECORDS_DEV = "medical_records_dev"
@@ -168,6 +287,7 @@ class DBCollectionNames(StrEnum):
     EXPENSES_DEV = "expenses_dev"
     LEDGER_PROD = "ledger"
     LEDGER_DEV = "ledger_dev"
+    REGISTERED_DOCTORS = "registered_doctors"  # Admin-managed doctor registry
 
 
 if __name__=="__main__":
