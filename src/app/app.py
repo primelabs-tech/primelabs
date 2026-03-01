@@ -2123,6 +2123,68 @@ class OpeningScreen:
                 st.caption(f"   Rates: {summary_text}")
 
 
+# Cached function to compute referral report data
+@st.cache_data(ttl=300)  # Cache for 5 minutes
+def compute_referral_report(records: tuple) -> dict:
+    """
+    Compute referral report data from medical records.
+    Groups commissions by doctor with detailed breakdown.
+    
+    Args:
+        records: Tuple of medical records (must be tuple for caching)
+        
+    Returns:
+        dict with doctor-wise commission breakdown
+    """
+    referral_data = {}
+    
+    for record in records:
+        referral_info = record.get('referral_info', {})
+        if not referral_info or not isinstance(referral_info, dict):
+            continue
+            
+        doctor_name = referral_info.get('doctor_name', 'Unknown')
+        doctor_id = referral_info.get('doctor_id', '')
+        doctor_location = referral_info.get('doctor_location', '')
+        commission = referral_info.get('total_commission', 0)
+        
+        if commission <= 0:
+            continue
+        
+        # Get patient info
+        patient = record.get('patient', {})
+        patient_name = patient.get('name', 'Unknown') if isinstance(patient, dict) else 'Unknown'
+        
+        # Get payment info
+        payment = record.get('payment', {})
+        payment_amount = payment.get('amount', 0) if isinstance(payment, dict) else 0
+        
+        # Get test details
+        test_commissions = referral_info.get('test_commissions', [])
+        
+        if doctor_name not in referral_data:
+            referral_data[doctor_name] = {
+                'doctor_id': doctor_id,
+                'location': doctor_location,
+                'total_commission': 0,
+                'total_revenue': 0,
+                'patient_count': 0,
+                'patients': []
+            }
+        
+        referral_data[doctor_name]['total_commission'] += commission
+        referral_data[doctor_name]['total_revenue'] += payment_amount
+        referral_data[doctor_name]['patient_count'] += 1
+        referral_data[doctor_name]['patients'].append({
+            'name': patient_name,
+            'payment': payment_amount,
+            'commission': commission,
+            'tests': test_commissions
+        })
+    
+    return referral_data
+
+
 class DailyReportPage:
     """Daily Report page showing total collections and expenses for the day or month"""
     
@@ -2308,16 +2370,27 @@ class DailyReportPage:
         
         # Check if user is admin
         is_admin = self.is_admin_user()
+        can_view_commissions = self.can_view_commissions()
         
         # Get today's date
         today = get_ist_now()
         today_date = today.date()
         
-        # Report type selection (Monthly only for admins)
+        # Report type selection based on user role
+        # - Admins: Daily, Monthly, Referral Report
+        # - Managers: Daily, Referral Report
+        # - Others: Daily only
         if is_admin:
+            report_options = ["Daily Report", "Monthly Report", "Referral Report"]
+        elif can_view_commissions:
+            report_options = ["Daily Report", "Referral Report"]
+        else:
+            report_options = ["Daily Report"]
+        
+        if len(report_options) > 1:
             report_type = st.radio(
                 "Report Type",
-                options=["Daily Report", "Monthly Report"],
+                options=report_options,
                 horizontal=True,
                 key="report_type_selector"
             )
@@ -2326,6 +2399,8 @@ class DailyReportPage:
         
         if report_type == "Monthly Report":
             self._render_monthly_report(is_admin, today, today_date)
+        elif report_type == "Referral Report":
+            self._render_referral_report(is_admin, today, today_date)
         else:
             self._render_daily_report(is_admin, today, today_date)
     
@@ -2440,6 +2515,17 @@ class DailyReportPage:
                             test_names = [t.get('name', '') for t in tests if isinstance(t, dict)]
                             if test_names:
                                 st.caption(f"Tests: {', '.join(test_names)}")
+                        
+                        # Show referral info (doctor name for all, commission only for managers+)
+                        referral_info = record.get('referral_info', {})
+                        if referral_info and isinstance(referral_info, dict):
+                            doctor_name = referral_info.get('doctor_name', '')
+                            if doctor_name:
+                                if can_view_commissions:
+                                    commission = referral_info.get('total_commission', 0)
+                                    st.caption(f"🤝 Referred by: Dr. {doctor_name} (₹{commission:,} commission)")
+                                else:
+                                    st.caption(f"🤝 Referred by: Dr. {doctor_name}")
                         
                         if i < len(records) - 1:
                             st.divider()
@@ -2737,6 +2823,128 @@ class DailyReportPage:
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             if st.button("🔄 Refresh Data", use_container_width=True, key="refresh_monthly_report"):
+                st.rerun()
+    
+    def _render_referral_report(self, is_admin: bool, today: datetime, today_date):
+        """Render the referral report view (Manager and Admin only)"""
+        import calendar
+        
+        # Header
+        st.markdown("""
+        <div style="text-align: center; padding: 20px 0;">
+            <h1 style="color: #e67e22; margin-bottom: 10px;">🤝 Referral Report</h1>
+            <p style="color: #666; font-size: 16px;">Doctor-wise commission breakdown</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Month and Year selection
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            month_names = list(calendar.month_name)[1:]
+            current_month_index = today.month - 1
+            selected_month_name = st.selectbox(
+                "Select Month",
+                options=month_names,
+                index=current_month_index,
+                key="referral_report_month"
+            )
+            selected_month = month_names.index(selected_month_name) + 1
+        
+        with col2:
+            current_year = today.year
+            years = list(range(2024, current_year + 1))
+            selected_year = st.selectbox(
+                "Select Year",
+                options=years,
+                index=len(years) - 1,
+                key="referral_report_year"
+            )
+        
+        # Validate that selected month/year is not in the future
+        if selected_year > current_year or (selected_year == current_year and selected_month > today.month):
+            st.warning("⚠️ Cannot view reports for future months.")
+            return
+        
+        st.markdown(f"### 📅 {selected_month_name} {selected_year}")
+        st.markdown("---")
+        
+        # Fetch monthly data with caching
+        with st.spinner("Loading referral data..."):
+            records, total_collection, total_commission = self.fetch_monthly_collections(selected_year, selected_month)
+            
+            # Convert records to tuple for caching (lists are not hashable)
+            records_tuple = tuple(
+                {k: (tuple(v) if isinstance(v, list) else v) for k, v in r.items()}
+                for r in records
+            )
+            
+            # Use cached computation
+            referral_data = compute_referral_report(records_tuple)
+        
+        # Summary card
+        doctor_count = len(referral_data)
+        total_referral_revenue = sum(d['total_revenue'] for d in referral_data.values())
+        total_patients = sum(d['patient_count'] for d in referral_data.values())
+        
+        st.markdown(f"""
+        <div style="
+            background: rgba(230, 126, 34, 0.1);
+            border: 2px solid #e67e22;
+            border-radius: 10px;
+            padding: 18px 24px;
+            text-align: center;
+        ">
+            <div style="color: #888; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">Referral Summary - {selected_month_name} {selected_year}</div>
+            <div style="color: #e67e22; font-size: 34px; font-weight: 700;">₹{total_commission:,}</div>
+            <div style="color: #666; font-size: 12px; margin-top: 6px;">{doctor_count} doctor(s) · {total_patients} patient(s) · ₹{total_referral_revenue:,} revenue from referrals</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("---")
+        
+        if not referral_data:
+            st.info("📭 No referral data found for this month.")
+        else:
+            # Sort doctors by commission (highest first)
+            sorted_doctors = sorted(referral_data.items(), key=lambda x: x[1]['total_commission'], reverse=True)
+            
+            st.markdown("### 👨‍⚕️ Doctor-wise Breakdown")
+            
+            for doctor_name, data in sorted_doctors:
+                location_text = f" ({data['location']})" if data['location'] else ""
+                commission_pct = (data['total_commission'] / data['total_revenue'] * 100) if data['total_revenue'] > 0 else 0
+                
+                with st.expander(f"**Dr. {doctor_name}**{location_text} — ₹{data['total_commission']:,} commission", expanded=False):
+                    # Doctor summary metrics
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Total Commission", f"₹{data['total_commission']:,}")
+                    with col2:
+                        st.metric("Patients Referred", data['patient_count'])
+                    with col3:
+                        st.metric("Revenue Generated", f"₹{data['total_revenue']:,}")
+                    
+                    st.caption(f"Average commission rate: {commission_pct:.1f}%")
+                    
+                    # Patient details
+                    st.markdown("**Patient Details:**")
+                    for i, patient in enumerate(data['patients'], 1):
+                        test_names = []
+                        if patient.get('tests'):
+                            for t in patient['tests']:
+                                if isinstance(t, dict):
+                                    test_names.append(t.get('test_name', ''))
+                        tests_text = f" ({', '.join(test_names)})" if test_names else ""
+                        st.caption(f"{i}. {patient['name']}: ₹{patient['payment']:,} → ₹{patient['commission']:,} commission{tests_text}")
+        
+        # Refresh button
+        st.markdown("---")
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            if st.button("🔄 Refresh Data", use_container_width=True, key="refresh_referral_report"):
+                # Clear the cache for this report
+                compute_referral_report.clear()
                 st.rerun()
 
 
