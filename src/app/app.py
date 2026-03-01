@@ -40,6 +40,16 @@ db = get_firestore()
 USER_DB_COLLECTION = "users"
 
 
+@st.cache_data(ttl=300)  # Cache for 5 minutes
+def get_active_doctors():
+    """Fetch all active registered doctors (cached)."""
+    db = get_firestore()
+    return db.get_docs(
+        DBCollectionNames.REGISTERED_DOCTORS.value,
+        limit=1000
+    )
+
+
 def get_test_category(test_name: str, test_price: int) -> TestCategory:
     """
     Determine the test category based on test name and price.
@@ -279,12 +289,9 @@ class MedicalRecordForm:
                 if through_referral:
                     st.markdown("**Select Referring Doctor**")
                     
-                    # Fetch registered doctors
+                    # Fetch registered doctors (cached)
                     try:
-                        registered_doctors = db.get_docs(
-                            DBCollectionNames.REGISTERED_DOCTORS.value,
-                            filters=[("is_active", "==", True)]
-                        )
+                        registered_doctors = get_active_doctors()
                     except Exception:
                         registered_doctors = []
                     
