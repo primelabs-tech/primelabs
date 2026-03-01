@@ -2143,6 +2143,9 @@ class DailyReportPage:
         Args:
             year: The year (e.g., 2026)
             month: The month (1-12)
+            
+        Returns:
+            tuple: (records, total_collection, total_commission)
         """
         try:
             records = db.get_docs_for_month(
@@ -2153,20 +2156,26 @@ class DailyReportPage:
                 limit=10000
             )
             
-            # Calculate total collection
+            # Calculate total collection and commission
             total_collection = 0
+            total_commission = 0
             for record in records:
                 payment = record.get('payment', {})
                 if isinstance(payment, dict):
                     total_collection += payment.get('amount', 0)
                 elif hasattr(payment, 'amount'):
                     total_collection += payment.amount
+                
+                # Extract commission from referral_info
+                referral_info = record.get('referral_info', {})
+                if referral_info and isinstance(referral_info, dict):
+                    total_commission += referral_info.get('total_commission', 0)
             
-            return records, total_collection
+            return records, total_collection, total_commission
             
         except Exception as e:
             logger.error(f"Error fetching monthly collections: {str(e)}")
-            return [], 0
+            return [], 0, 0
     
     def fetch_monthly_expenses(self, year: int, month: int):
         """Fetch all expenses for a specific month
@@ -2207,6 +2216,9 @@ class DailyReportPage:
         
         Args:
             target_date: The date to fetch records for. If None, uses today's date.
+            
+        Returns:
+            tuple: (records, total_collection, total_commission)
         """
         try:
             if target_date is None:
@@ -2225,20 +2237,26 @@ class DailyReportPage:
                     limit=1000
                 )
             
-            # Calculate total collection
+            # Calculate total collection and commission
             total_collection = 0
+            total_commission = 0
             for record in records:
                 payment = record.get('payment', {})
                 if isinstance(payment, dict):
                     total_collection += payment.get('amount', 0)
                 elif hasattr(payment, 'amount'):
                     total_collection += payment.amount
+                
+                # Extract commission from referral_info
+                referral_info = record.get('referral_info', {})
+                if referral_info and isinstance(referral_info, dict):
+                    total_commission += referral_info.get('total_commission', 0)
             
-            return records, total_collection
+            return records, total_collection, total_commission
             
         except Exception as e:
             logger.error(f"Error fetching daily collections: {str(e)}")
-            return [], 0
+            return [], 0, 0
     
     def fetch_daily_expenses(self, target_date: datetime = None):
         """Fetch all expenses for a specific date using server-side date filtering
@@ -2342,7 +2360,7 @@ class DailyReportPage:
         
         # Fetch data first for summary
         with st.spinner("Loading data..."):
-            records, total_collection = self.fetch_daily_collections(target_date)
+            records, total_collection, total_commission = self.fetch_daily_collections(target_date)
             expenses, total_expenses = self.fetch_daily_expenses(target_date)
         
         # Summary section at the top - Net Amount in a styled card
@@ -2355,6 +2373,9 @@ class DailyReportPage:
         status_text = "Money In" if is_profit else "Money Out"
         status_icon = "💰" if is_profit else "💸"
         
+        # Commission info for subtitle
+        commission_text = f" · ₹{total_commission:,} commission" if total_commission > 0 else ""
+        
         st.markdown(f"""
         <div style="
             background: {summary_bg};
@@ -2365,7 +2386,7 @@ class DailyReportPage:
         ">
             <div style="color: #888; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">Today's Balance</div>
             <div style="color: {summary_color}; font-size: 34px; font-weight: 700;">₹{net_amount:,} <span style="font-size: 15px; font-weight: 500;">{status_icon} {status_text}</span></div>
-            <div style="color: #666; font-size: 12px; margin-top: 6px;">₹{total_collection:,} income · ₹{total_expenses:,} expenses</div>
+            <div style="color: #666; font-size: 12px; margin-top: 6px;">₹{total_collection:,} income · ₹{total_expenses:,} expenses{commission_text}</div>
         </div>
         """, unsafe_allow_html=True)
         
@@ -2446,6 +2467,40 @@ class DailyReportPage:
                         if i < len(expenses) - 1:
                             st.divider()
         
+        # Commission section (only show if there are commissions)
+        if total_commission > 0:
+            st.markdown("---")
+            st.markdown("### 🤝 Doctor Commissions")
+            
+            commission_label = "Total Commission Due Today" if (not is_admin or selected_date == today_date) else f"Total Commission Due ({selected_date.strftime('%d %b %Y')})"
+            st.metric(
+                label=commission_label,
+                value=f"₹{total_commission:,}",
+                help="Total commission payable to referring doctors"
+            )
+            
+            # Count referral records
+            referral_count = sum(1 for r in records if r.get('referral_info'))
+            st.info(f"📋 {referral_count} referral(s) with commission")
+            
+            # Show commission breakdown by doctor
+            with st.expander("📄 View Commission Details", expanded=False):
+                # Group commissions by doctor
+                commissions_by_doctor = {}
+                for record in records:
+                    referral_info = record.get('referral_info', {})
+                    if referral_info and isinstance(referral_info, dict):
+                        doctor_name = referral_info.get('doctor_name', 'Unknown')
+                        commission = referral_info.get('total_commission', 0)
+                        if commission > 0:
+                            if doctor_name not in commissions_by_doctor:
+                                commissions_by_doctor[doctor_name] = {'total': 0, 'count': 0}
+                            commissions_by_doctor[doctor_name]['total'] += commission
+                            commissions_by_doctor[doctor_name]['count'] += 1
+                
+                for doctor_name, data in sorted(commissions_by_doctor.items(), key=lambda x: x[1]['total'], reverse=True):
+                    st.markdown(f"**Dr. {doctor_name}**: ₹{data['total']:,} ({data['count']} patient(s))")
+        
         # Refresh button
         st.markdown("---")
         col1, col2, col3 = st.columns([1, 2, 1])
@@ -2502,7 +2557,7 @@ class DailyReportPage:
         
         # Fetch monthly data
         with st.spinner("Loading monthly data..."):
-            records, total_collection = self.fetch_monthly_collections(selected_year, selected_month)
+            records, total_collection, total_commission = self.fetch_monthly_collections(selected_year, selected_month)
             expenses, total_expenses = self.fetch_monthly_expenses(selected_year, selected_month)
         
         # Summary section at the top - Net Amount in a styled card
@@ -2515,6 +2570,9 @@ class DailyReportPage:
         status_text = "Net Profit" if is_profit else "Net Loss"
         status_icon = "📈" if is_profit else "📉"
         
+        # Commission info for subtitle
+        commission_text = f" · ₹{total_commission:,} commission" if total_commission > 0 else ""
+        
         st.markdown(f"""
         <div style="
             background: {summary_bg};
@@ -2525,7 +2583,7 @@ class DailyReportPage:
         ">
             <div style="color: #888; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">Monthly Balance - {selected_month_name} {selected_year}</div>
             <div style="color: {summary_color}; font-size: 34px; font-weight: 700;">₹{net_amount:,} <span style="font-size: 15px; font-weight: 500;">{status_icon} {status_text}</span></div>
-            <div style="color: #666; font-size: 12px; margin-top: 6px;">₹{total_collection:,} income · ₹{total_expenses:,} expenses</div>
+            <div style="color: #666; font-size: 12px; margin-top: 6px;">₹{total_collection:,} income · ₹{total_expenses:,} expenses{commission_text}</div>
         </div>
         """, unsafe_allow_html=True)
         
@@ -2628,6 +2686,40 @@ class DailyReportPage:
                             st.caption(f"  • {expense_type}: ₹{amount:,}{desc_text}")
                         
                         st.divider()
+        
+        # Commission section (only show if there are commissions)
+        if total_commission > 0:
+            st.markdown("---")
+            st.markdown("### 🤝 Doctor Commissions")
+            
+            st.metric(
+                label=f"Total Commission Due - {selected_month_name} {selected_year}",
+                value=f"₹{total_commission:,}",
+                help="Total commission payable to referring doctors this month"
+            )
+            
+            # Count referral records
+            referral_count = sum(1 for r in records if r.get('referral_info'))
+            st.info(f"📋 {referral_count} referral(s) with commission this month")
+            
+            # Show commission breakdown by doctor
+            with st.expander("📄 View Commission Details by Doctor", expanded=False):
+                # Group commissions by doctor
+                commissions_by_doctor = {}
+                for record in records:
+                    referral_info = record.get('referral_info', {})
+                    if referral_info and isinstance(referral_info, dict):
+                        doctor_name = referral_info.get('doctor_name', 'Unknown')
+                        commission = referral_info.get('total_commission', 0)
+                        if commission > 0:
+                            if doctor_name not in commissions_by_doctor:
+                                commissions_by_doctor[doctor_name] = {'total': 0, 'count': 0}
+                            commissions_by_doctor[doctor_name]['total'] += commission
+                            commissions_by_doctor[doctor_name]['count'] += 1
+                
+                st.markdown("**Commission Summary by Doctor:**")
+                for doctor_name, data in sorted(commissions_by_doctor.items(), key=lambda x: x[1]['total'], reverse=True):
+                    st.markdown(f"• **Dr. {doctor_name}**: ₹{data['total']:,} ({data['count']} patient(s))")
         
         # Refresh button
         st.markdown("---")
