@@ -744,12 +744,17 @@ class MedicalRecordForm:
                             }
                         
                         # Calculate commission for each test
+                        # IMPORTANT: Discount given to patient is deducted from doctor's commission
                         test_commission_details = []
                         total_commission = 0
                         
                         for test_name in selected_tests:
-                            test_price = test_payments.get(test_name, TEST_PRICES[test_name])
-                            test_category = get_test_category(test_name, test_price)
+                            original_price = TEST_PRICES[test_name]  # Standard price
+                            paid_price = test_payments.get(test_name, original_price)  # Actual amount paid
+                            discount = original_price - paid_price  # Discount given
+                            
+                            # Use original price for category determination
+                            test_category = get_test_category(test_name, original_price)
                             
                             # Get commission rate for this category
                             if test_category.value in commission_lookup:
@@ -762,20 +767,27 @@ class MedicalRecordForm:
                                 comm_type = default["type"].value if hasattr(default["type"], 'value') else default["type"]
                                 comm_rate = default["rate"]
                             
-                            # Calculate commission for this test
+                            # Calculate original commission (based on standard price)
                             if comm_type == CommissionType.PERCENTAGE.value:
-                                commission_amount = int(test_price * comm_rate / 100)
+                                original_commission = int(original_price * comm_rate / 100)
                             else:
-                                commission_amount = int(comm_rate)
+                                original_commission = int(comm_rate)
+                            
+                            # Deduct discount from commission
+                            # Commission = Original Commission - Discount (but not less than 0)
+                            commission_amount = max(0, original_commission - discount)
                             
                             total_commission += commission_amount
                             
                             test_commission_details.append(TestCommissionDetail(
                                 test_name=test_name,
                                 test_category=test_category,
-                                test_price=test_price,
+                                original_price=original_price,
+                                paid_price=paid_price,
+                                discount=discount,
                                 commission_type=CommissionType(comm_type),
                                 commission_rate=float(comm_rate),
+                                original_commission=original_commission,
                                 commission_amount=commission_amount
                             ))
                         
@@ -2172,13 +2184,18 @@ class OpeningScreen:
                                 'location': ref_info.get('doctor_location', ''),
                                 'total_commission': 0,
                                 'total_payments': 0,
+                                'total_discount': 0,  # Track total discounts given
                                 'record_count': 0,
                                 'category_breakdown': {},  # Track commission by test category
                                 'records': []  # Store individual records for detailed view
                             }
                         
+                        # Calculate total discount for this record
+                        record_discount = sum(tc.get('discount', 0) for tc in test_commissions)
+                        
                         commission_by_doctor[doctor_id]['total_commission'] += commission
                         commission_by_doctor[doctor_id]['total_payments'] += payment_amount
+                        commission_by_doctor[doctor_id]['total_discount'] += record_discount
                         commission_by_doctor[doctor_id]['record_count'] += 1
                         
                         # Track category-level breakdown
@@ -2188,10 +2205,13 @@ class OpeningScreen:
                                 commission_by_doctor[doctor_id]['category_breakdown'][cat] = {
                                     'count': 0,
                                     'total_price': 0,
+                                    'total_discount': 0,
                                     'total_commission': 0
                                 }
                             commission_by_doctor[doctor_id]['category_breakdown'][cat]['count'] += 1
-                            commission_by_doctor[doctor_id]['category_breakdown'][cat]['total_price'] += tc.get('test_price', 0)
+                            # Use paid_price for new records, fall back to test_price for old records
+                            commission_by_doctor[doctor_id]['category_breakdown'][cat]['total_price'] += tc.get('paid_price', tc.get('test_price', 0))
+                            commission_by_doctor[doctor_id]['category_breakdown'][cat]['total_discount'] += tc.get('discount', 0)
                             commission_by_doctor[doctor_id]['category_breakdown'][cat]['total_commission'] += tc.get('commission_amount', 0)
                         
                         # Store record for detailed view
@@ -2231,8 +2251,9 @@ class OpeningScreen:
                 st.markdown("### 👨‍⚕️ Doctor-wise Commission Breakdown")
                 
                 for doctor_id, data in sorted(commission_by_doctor.items(), key=lambda x: x[1]['total_commission'], reverse=True):
-                    with st.expander(f"**Dr. {data['name']}** - {data['record_count']} referrals - **₹{data['total_commission']:,}** commission"):
-                        col1, col2 = st.columns([1, 1])
+                    discount_info = f" (Discounts: ₹{data['total_discount']:,})" if data.get('total_discount', 0) > 0 else ""
+                    with st.expander(f"**Dr. {data['name']}** - {data['record_count']} referrals - **₹{data['total_commission']:,}** commission{discount_info}"):
+                        col1, col2, col3 = st.columns([1, 1, 1])
                         
                         with col1:
                             st.markdown(f"**📍 Location:** {data['location']}")
@@ -2242,19 +2263,25 @@ class OpeningScreen:
                             st.markdown(f"**💵 Total Payments:** ₹{data['total_payments']:,}")
                             st.markdown(f"**💰 Total Commission:** ₹{data['total_commission']:,}")
                         
+                        with col3:
+                            if data.get('total_discount', 0) > 0:
+                                st.markdown(f"**🏷️ Total Discounts:** ₹{data['total_discount']:,}")
+                                st.caption("(Deducted from commission)")
+                        
                         # Category-wise breakdown
                         if data.get('category_breakdown'):
                             st.markdown("---")
                             st.markdown("**📊 Commission by Test Category:**")
                             
                             for cat, cat_data in sorted(data['category_breakdown'].items(), key=lambda x: x[1]['total_commission'], reverse=True):
+                                discount_text = f" (-₹{cat_data.get('total_discount', 0):,})" if cat_data.get('total_discount', 0) > 0 else ""
                                 col1, col2, col3 = st.columns([2, 2, 2])
                                 with col1:
                                     st.text(f"• {cat}")
                                 with col2:
                                     st.text(f"{cat_data['count']} tests")
                                 with col3:
-                                    st.text(f"₹{cat_data['total_commission']:,}")
+                                    st.text(f"₹{cat_data['total_commission']:,}{discount_text}")
                         
                         # Individual records
                         st.markdown("---")

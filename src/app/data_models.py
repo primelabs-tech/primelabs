@@ -255,10 +255,13 @@ class TestCommissionDetail(BaseModel):
     """Detail of commission for a single test in a referral"""
     test_name: str = Field(description="Name of the test")
     test_category: TestCategory = Field(description="Category of the test")
-    test_price: int = Field(description="Price paid for the test")
+    original_price: int = Field(description="Original/standard price of the test")
+    paid_price: int = Field(description="Actual amount paid by patient")
+    discount: int = Field(description="Discount given (original - paid)", default=0)
     commission_type: CommissionType = Field(description="Commission type used")
     commission_rate: float = Field(description="Commission rate used")
-    commission_amount: int = Field(description="Calculated commission amount")
+    original_commission: int = Field(description="Commission before discount adjustment")
+    commission_amount: int = Field(description="Final commission after discount deduction")
 
 
 class DoctorReferralInfo(BaseModel):
