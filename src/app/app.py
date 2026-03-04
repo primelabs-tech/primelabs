@@ -1832,32 +1832,35 @@ class OpeningScreen:
                     notes = doc.get('notes') or 'None'
                     
                     with st.container():
-                        # Doctor info
-                        col1, col2, col3 = st.columns([3, 2, 2])
+                        # Doctor info header
+                        col1, col2 = st.columns([3, 2])
                         
                         with col1:
                             st.markdown(f"**🔴 Dr. {doctor_name}**")
-                            st.caption(f"📍 {doctor_location}")
-                            st.caption(f"📞 {doctor_phone}")
+                            st.caption(f"📍 {doctor_location} | 📞 {doctor_phone}")
                         
                         with col2:
                             st.caption(f"**Added by:** {created_by}")
-                            st.caption(f"**Notes:** {notes}")
+                            if notes != 'None':
+                                st.caption(f"**Notes:** {notes}")
                         
-                        with col3:
-                            # Show commission rates summary
-                            commission_rates = doc.get('commission_rates', [])
-                            if commission_rates:
-                                rates_summary = []
-                                for cr in commission_rates[:3]:  # Show first 3
-                                    cat = cr.get('category', '').replace('_', '-')
-                                    rate = cr.get('rate', 0)
-                                    ctype = cr.get('commission_type', '')
+                        # Show ALL commission rates in a grid
+                        commission_rates = doc.get('commission_rates', [])
+                        if commission_rates:
+                            st.markdown("**💰 Commission Rates:**")
+                            # Display rates in 4 columns
+                            rate_cols = st.columns(4)
+                            for i, cr in enumerate(commission_rates):
+                                cat = cr.get('category', '').replace('_', '-')
+                                rate = cr.get('rate', 0)
+                                ctype = cr.get('commission_type', '')
+                                with rate_cols[i % 4]:
                                     if ctype == CommissionType.PERCENTAGE.value:
-                                        rates_summary.append(f"{cat}: {rate}%")
+                                        st.caption(f"**{cat}:** {rate}%")
                                     else:
-                                        rates_summary.append(f"{cat}: ₹{int(rate)}")
-                                st.caption("**Rates:** " + ", ".join(rates_summary) + "...")
+                                        st.caption(f"**{cat}:** ₹{int(rate)}")
+                        else:
+                            st.caption("**💰 Commission Rates:** Not set")
                         
                         # Action buttons
                         btn_col1, btn_col2, btn_col3 = st.columns([1, 1, 2])
