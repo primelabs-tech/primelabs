@@ -1987,6 +1987,24 @@ class OpeningScreen:
                 if selected_doctor:
                     st.markdown(f"### ✏️ Editing: Dr. {selected_doctor.get('name', 'Unknown')}")
                     
+                    # Count linked medical records after March 1, 2026
+                    doctor_id_for_query = selected_doctor.get('doctor_id', '')
+                    march_1_2026 = datetime(2026, 3, 1)
+                    medical_collection = DBCollectionNames(st.secrets["database_collection"]).value
+                    
+                    try:
+                        linked_records = self.db.get_docs(
+                            medical_collection,
+                            filters=[
+                                ("referral_info.doctor_id", "==", doctor_id_for_query),
+                                ("date", ">=", march_1_2026)
+                            ],
+                            limit=5000
+                        )
+                        linked_count = len(linked_records)
+                    except Exception:
+                        linked_count = 0
+                    
                     col1, col2 = st.columns([2, 1])
                     
                     with col1:
@@ -1995,6 +2013,7 @@ class OpeningScreen:
                             st.markdown(f"**📞 Phone:** {selected_doctor.get('phone')}")
                         if selected_doctor.get('notes'):
                             st.markdown(f"**📝 Notes:** {selected_doctor.get('notes')}")
+                        st.markdown(f"**📊 Linked Records (since Mar 1, 2026):** {linked_count}")
                     
                     with col2:
                         is_active = selected_doctor.get('is_active', True)
@@ -2015,6 +2034,33 @@ class OpeningScreen:
                                     {"is_active": True}
                                 )
                                 st.rerun()
+                        
+                        # Delete doctor button
+                        if st.button("🗑️ Delete Doctor", key="delete_selected", type="secondary"):
+                            st.session_state.confirm_delete_doctor = selected_doctor.get('id')
+                        
+                        # Confirmation dialog for delete
+                        if st.session_state.get('confirm_delete_doctor') == selected_doctor.get('id'):
+                            st.warning(f"⚠️ Are you sure you want to delete Dr. {selected_doctor.get('name')}?")
+                            if linked_count > 0:
+                                st.error(f"This doctor has {linked_count} linked medical records!")
+                            col_yes, col_no = st.columns(2)
+                            with col_yes:
+                                if st.button("✅ Yes, Delete", key="confirm_delete_yes", type="primary"):
+                                    try:
+                                        self.db.delete_doc(
+                                            DBCollectionNames.REGISTERED_DOCTORS.value,
+                                            selected_doctor.get('id')
+                                        )
+                                        st.session_state.confirm_delete_doctor = None
+                                        st.success(f"✅ Dr. {selected_doctor.get('name')} deleted.")
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Error deleting doctor: {str(e)}")
+                            with col_no:
+                                if st.button("❌ Cancel", key="confirm_delete_no"):
+                                    st.session_state.confirm_delete_doctor = None
+                                    st.rerun()
                     
                     st.markdown("---")
                     st.markdown("**💰 Edit Commission Rates:**")
@@ -2080,6 +2126,59 @@ class OpeningScreen:
                             st.rerun()
                         except Exception as e:
                             st.error(f"Error updating rates: {str(e)}")
+                    
+                    st.markdown("---")
+                    
+                    # Date range selector for referral statistics
+                    st.markdown("**📈 Referral Statistics**")
+                    
+                    date_col1, date_col2 = st.columns(2)
+                    with date_col1:
+                        start_date = st.date_input(
+                            "From Date",
+                            value=datetime(2026, 3, 1).date(),
+                            key="doctor_stats_start_date"
+                        )
+                    with date_col2:
+                        end_date = st.date_input(
+                            "To Date",
+                            value=get_ist_now().date(),
+                            key="doctor_stats_end_date"
+                        )
+                    
+                    # Query records for the selected date range
+                    if start_date and end_date:
+                        start_datetime = datetime.combine(start_date, datetime.min.time())
+                        end_datetime = datetime.combine(end_date, datetime.max.time())
+                        
+                        try:
+                            date_range_records = self.db.get_docs(
+                                medical_collection,
+                                filters=[
+                                    ("referral_info.doctor_id", "==", doctor_id_for_query),
+                                    ("date", ">=", start_datetime),
+                                    ("date", "<=", end_datetime)
+                                ],
+                                limit=5000
+                            )
+                            
+                            # Calculate statistics
+                            patients_referred = len(date_range_records)
+                            total_commission = 0
+                            for record in date_range_records:
+                                referral_info = record.get('referral_info', {})
+                                if referral_info and isinstance(referral_info, dict):
+                                    total_commission += referral_info.get('total_commission', 0)
+                            
+                            # Display statistics
+                            stats_col1, stats_col2 = st.columns(2)
+                            with stats_col1:
+                                st.metric("👥 Patients Referred", patients_referred)
+                            with stats_col2:
+                                st.metric("💰 Total Commission", f"₹{total_commission:,.0f}")
+                                
+                        except Exception as e:
+                            st.error(f"Error fetching statistics: {str(e)}")
                     
                     st.markdown("---")
             
