@@ -2012,6 +2012,10 @@ class OpeningScreen:
                 if selected_doctor_id != st.session_state.get('selected_doctor_id'):
                     st.session_state.selected_doctor_id = selected_doctor_id
                     st.session_state.doctor_panel = None
+            else:
+                # Deselected - clear the selected doctor
+                st.session_state.selected_doctor_id = None
+                st.session_state.doctor_panel = None
             
             st.markdown("---")
             
