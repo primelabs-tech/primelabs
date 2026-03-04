@@ -1953,258 +1953,390 @@ class OpeningScreen:
         st.markdown("---")
         
         # List existing doctors
-        st.markdown("### 📋 Registered Doctors List")
+        st.markdown("### 📋 Registered Doctors")
         
         if not doctors:
             st.info("No doctors registered yet. Add your first doctor above.")
         else:
-            # Filter options
-            show_inactive = st.checkbox("Show inactive doctors", value=False, key="show_inactive_doctors")
-            
             active_doctors = [d for d in doctors if d.get('is_active', True)]
             inactive_doctors = [d for d in doctors if not d.get('is_active', True)]
             
-            st.caption(f"📊 {len(active_doctors)} active, {len(inactive_doctors)} inactive doctors")
+            # Search and filter bar
+            filter_col1, filter_col2, filter_col3 = st.columns([3, 1, 1])
             
-            display_doctors = doctors if show_inactive else active_doctors
+            with filter_col1:
+                search_query = st.text_input(
+                    "🔍 Search doctors",
+                    placeholder="Search by name or location...",
+                    key="doctor_search",
+                    label_visibility="collapsed"
+                )
             
-            # Build doctor options for selectbox
-            doctor_options = {f"{d.get('name', 'Unknown')} - {d.get('location', '')}": d.get('id') for d in display_doctors}
-            doctor_options_list = ["-- Select a doctor to edit --"] + list(doctor_options.keys())
+            with filter_col2:
+                status_filter = st.selectbox(
+                    "Status",
+                    options=["Active Only", "All Doctors", "Inactive Only"],
+                    key="doctor_status_filter",
+                    label_visibility="collapsed"
+                )
             
-            # Doctor selector
-            selected_option = st.selectbox(
-                "Select doctor to view/edit",
-                options=doctor_options_list,
-                key="doctor_selector"
-            )
+            with filter_col3:
+                sort_by = st.selectbox(
+                    "Sort",
+                    options=["Name A-Z", "Name Z-A", "Location"],
+                    key="doctor_sort",
+                    label_visibility="collapsed"
+                )
             
-            # Edit selected doctor FIRST (only render widgets for the selected doctor)
-            if selected_option != "-- Select a doctor to edit --":
-                selected_doctor_id = doctor_options.get(selected_option)
-                selected_doctor = next((d for d in doctors if d.get('id') == selected_doctor_id), None)
+            # Apply filters
+            if status_filter == "Active Only":
+                display_doctors = active_doctors
+            elif status_filter == "Inactive Only":
+                display_doctors = inactive_doctors
+            else:
+                display_doctors = doctors
+            
+            # Apply search
+            if search_query:
+                search_lower = search_query.lower()
+                display_doctors = [
+                    d for d in display_doctors 
+                    if search_lower in d.get('name', '').lower() 
+                    or search_lower in d.get('location', '').lower()
+                ]
+            
+            # Apply sorting
+            if sort_by == "Name A-Z":
+                display_doctors = sorted(display_doctors, key=lambda x: x.get('name', '').lower())
+            elif sort_by == "Name Z-A":
+                display_doctors = sorted(display_doctors, key=lambda x: x.get('name', '').lower(), reverse=True)
+            elif sort_by == "Location":
+                display_doctors = sorted(display_doctors, key=lambda x: x.get('location', '').lower())
+            
+            # Stats bar
+            st.markdown(f"""
+            <div style="display: flex; gap: 20px; padding: 10px 0; border-bottom: 1px solid #333; margin-bottom: 15px;">
+                <span style="color: #4CAF50;">🟢 <strong>{len(active_doctors)}</strong> Active</span>
+                <span style="color: #f44336;">🔴 <strong>{len(inactive_doctors)}</strong> Inactive</span>
+                <span style="color: #888;">📋 <strong>{len(display_doctors)}</strong> Showing</span>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Doctor cards in a scrollable container
+            if not display_doctors:
+                st.info("No doctors match your search criteria.")
+            else:
+                # Initialize selected doctor in session state
+                if 'selected_doctor_id' not in st.session_state:
+                    st.session_state.selected_doctor_id = None
                 
-                if selected_doctor:
-                    st.markdown(f"### ✏️ Editing: Dr. {selected_doctor.get('name', 'Unknown')}")
+                # Display doctors as clickable cards (3 per row)
+                for i in range(0, len(display_doctors), 3):
+                    cols = st.columns(3)
+                    for j, col in enumerate(cols):
+                        if i + j < len(display_doctors):
+                            doctor = display_doctors[i + j]
+                            doc_id = doctor.get('id')
+                            is_active = doctor.get('is_active', True)
+                            is_selected = st.session_state.selected_doctor_id == doc_id
+                            
+                            with col:
+                                # Card styling
+                                status_color = "#4CAF50" if is_active else "#f44336"
+                                border_color = "#1E88E5" if is_selected else "#333"
+                                bg_color = "rgba(30, 136, 229, 0.1)" if is_selected else "transparent"
+                                
+                                # Commission summary
+                                commission_rates = doctor.get('commission_rates', [])
+                                if commission_rates:
+                                    # Show just key rates
+                                    key_rates = []
+                                    for cr in commission_rates[:3]:
+                                        cat = cr.get('category', '').replace('_', ' ')
+                                        rate = cr.get('rate', 0)
+                                        ctype = cr.get('commission_type', '')
+                                        if ctype == CommissionType.PERCENTAGE.value:
+                                            key_rates.append(f"{rate:.0f}%")
+                                        else:
+                                            key_rates.append(f"₹{int(rate)}")
+                                    rates_text = " · ".join(key_rates)
+                                else:
+                                    rates_text = "No rates"
+                                
+                                st.markdown(f"""
+                                <div style="
+                                    border: 2px solid {border_color};
+                                    border-radius: 10px;
+                                    padding: 12px;
+                                    margin-bottom: 10px;
+                                    background: {bg_color};
+                                    cursor: pointer;
+                                ">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                        <span style="font-weight: 600; font-size: 14px;">Dr. {doctor.get('name', 'Unknown')[:20]}</span>
+                                        <span style="color: {status_color}; font-size: 12px;">●</span>
+                                    </div>
+                                    <div style="color: #888; font-size: 12px; margin-bottom: 4px;">📍 {doctor.get('location', 'N/A')[:25]}</div>
+                                    <div style="color: #666; font-size: 11px;">💰 {rates_text}</div>
+                                </div>
+                                """, unsafe_allow_html=True)
+                                
+                                if st.button("Select", key=f"select_doc_{doc_id}", use_container_width=True):
+                                    st.session_state.selected_doctor_id = doc_id
+                                    st.session_state.doctor_panel = None
+                                    st.rerun()
+                
+                st.markdown("---")
+                
+                # Selected doctor detail panel
+                if st.session_state.selected_doctor_id:
+                    selected_doctor = next((d for d in doctors if d.get('id') == st.session_state.selected_doctor_id), None)
                     
-                    # Count linked medical records after March 1, 2026
-                    doctor_id_for_query = selected_doctor.get('doctor_id', '')
-                    march_1_2026 = datetime(2026, 3, 1)
-                    medical_collection = DBCollectionNames(st.secrets["database_collection"]).value
-                    
-                    try:
-                        linked_records = self.db.get_docs(
-                            medical_collection,
-                            filters=[
-                                ("referral_info.doctor_id", "==", doctor_id_for_query),
-                                ("date", ">=", march_1_2026)
-                            ],
-                            limit=5000
-                        )
-                        linked_count = len(linked_records)
-                    except Exception:
-                        linked_count = 0
-                    
-                    col1, col2 = st.columns([2, 1])
-                    
-                    with col1:
-                        st.markdown(f"**📍 Location:** {selected_doctor.get('location', 'Unknown')}")
-                        if selected_doctor.get('phone'):
-                            st.markdown(f"**📞 Phone:** {selected_doctor.get('phone')}")
-                        if selected_doctor.get('notes'):
-                            st.markdown(f"**📝 Notes:** {selected_doctor.get('notes')}")
-                        st.markdown(f"**📊 Linked Records (since Mar 1, 2026):** {linked_count}")
-                    
-                    with col2:
+                    if selected_doctor:
+                        doctor_id_for_query = selected_doctor.get('doctor_id', '')
+                        medical_collection = DBCollectionNames(st.secrets["database_collection"]).value
                         is_active = selected_doctor.get('is_active', True)
-                        # Activate/Deactivate button
-                        if is_active:
-                            if st.button("🚫 Deactivate Doctor", key="deactivate_selected"):
-                                self.db.update_doc(
-                                    DBCollectionNames.REGISTERED_DOCTORS.value,
-                                    selected_doctor.get('id'),
-                                    {"is_active": False}
-                                )
-                                st.rerun()
-                        else:
-                            if st.button("✅ Activate Doctor", key="activate_selected"):
-                                self.db.update_doc(
-                                    DBCollectionNames.REGISTERED_DOCTORS.value,
-                                    selected_doctor.get('id'),
-                                    {"is_active": True}
-                                )
+                        
+                        # Detail panel header
+                        header_col1, header_col2 = st.columns([4, 1])
+                        with header_col1:
+                            status_emoji = "🟢" if is_active else "🔴"
+                            st.markdown(f"### {status_emoji} Dr. {selected_doctor.get('name', 'Unknown')}")
+                        with header_col2:
+                            if st.button("✕ Close", key="close_detail", use_container_width=True):
+                                st.session_state.selected_doctor_id = None
+                                st.session_state.doctor_panel = None
                                 st.rerun()
                         
-                        # Delete doctor button
-                        if st.button("🗑️ Delete Doctor", key="delete_selected", type="secondary"):
-                            st.session_state.confirm_delete_doctor = selected_doctor.get('id')
+                        # Info row
+                        info_col1, info_col2, info_col3 = st.columns(3)
+                        with info_col1:
+                            st.markdown(f"**📍 Location**")
+                            st.caption(selected_doctor.get('location', 'N/A'))
+                        with info_col2:
+                            st.markdown(f"**📞 Phone**")
+                            st.caption(selected_doctor.get('phone') or 'Not provided')
+                        with info_col3:
+                            st.markdown(f"**📝 Notes**")
+                            st.caption(selected_doctor.get('notes') or 'None')
                         
-                        # Confirmation dialog for delete
-                        if st.session_state.get('confirm_delete_doctor') == selected_doctor.get('id'):
-                            st.warning(f"⚠️ Are you sure you want to delete Dr. {selected_doctor.get('name')}?")
+                        # Current rates display
+                        commission_rates = selected_doctor.get('commission_rates', [])
+                        if commission_rates:
+                            st.markdown("**Current Commission Rates:**")
+                            rate_cols = st.columns(4)
+                            for idx, cr in enumerate(commission_rates):
+                                with rate_cols[idx % 4]:
+                                    cat = cr.get('category', '').replace('_', '-')
+                                    rate = cr.get('rate', 0)
+                                    ctype = cr.get('commission_type', '')
+                                    if ctype == CommissionType.PERCENTAGE.value:
+                                        st.caption(f"**{cat}:** {rate}%")
+                                    else:
+                                        st.caption(f"**{cat}:** ₹{int(rate)}")
+                        
+                        st.markdown("---")
+                        
+                        # Action buttons
+                        btn_col1, btn_col2, btn_col3, btn_col4 = st.columns(4)
+                        
+                        with btn_col1:
+                            if st.button("💰 Edit Rates", key="btn_edit_rates", use_container_width=True):
+                                st.session_state.doctor_panel = 'edit_rates'
+                        
+                        with btn_col2:
+                            if st.button("📈 Statistics", key="btn_view_stats", use_container_width=True):
+                                st.session_state.doctor_panel = 'view_stats'
+                        
+                        with btn_col3:
+                            if is_active:
+                                if st.button("🚫 Deactivate", key="btn_deactivate", use_container_width=True):
+                                    self.db.update_doc(
+                                        DBCollectionNames.REGISTERED_DOCTORS.value,
+                                        selected_doctor.get('id'),
+                                        {"is_active": False}
+                                    )
+                                    st.rerun()
+                            else:
+                                if st.button("✅ Activate", key="btn_activate", use_container_width=True):
+                                    self.db.update_doc(
+                                        DBCollectionNames.REGISTERED_DOCTORS.value,
+                                        selected_doctor.get('id'),
+                                        {"is_active": True}
+                                    )
+                                    st.rerun()
+                        
+                        with btn_col4:
+                            if st.button("🗑️ Delete", key="btn_delete", use_container_width=True):
+                                st.session_state.doctor_panel = 'delete'
+                        
+                        # Panel content
+                        current_panel = st.session_state.get('doctor_panel', None)
+                        
+                        if current_panel == 'edit_rates':
+                            st.markdown("---")
+                            st.markdown("#### 💰 Edit Commission Rates")
+                            
+                            col1, col2, col3, col4 = st.columns(4)
+                            rate_lookup = {cr.get('category'): cr for cr in commission_rates}
+                            
+                            updated_rates = []
+                            for i, (cat, label, default_type, default_rate) in enumerate(categories_config):
+                                col = [col1, col2, col3, col4][i % 4]
+                                existing = rate_lookup.get(cat.value, {})
+                                current_type = existing.get('commission_type', default_type.value if hasattr(default_type, 'value') else default_type)
+                                current_rate = existing.get('rate', default_rate)
+                                
+                                with col:
+                                    st.markdown(f"**{label}**")
+                                    new_type = st.selectbox(
+                                        f"Type",
+                                        options=[CommissionType.FIXED.value, CommissionType.PERCENTAGE.value],
+                                        index=0 if current_type == CommissionType.FIXED.value else 1,
+                                        key=f"edit_{cat.value}_type",
+                                        label_visibility="collapsed"
+                                    )
+                                    if new_type == CommissionType.FIXED.value:
+                                        new_rate = st.number_input(
+                                            f"₹",
+                                            min_value=0,
+                                            max_value=10000,
+                                            value=int(current_rate) if current_type == CommissionType.FIXED.value else 100,
+                                            step=10,
+                                            key=f"edit_{cat.value}_rate",
+                                            label_visibility="collapsed"
+                                        )
+                                    else:
+                                        new_rate = st.number_input(
+                                            f"%",
+                                            min_value=0.0,
+                                            max_value=100.0,
+                                            value=float(current_rate) if current_type == CommissionType.PERCENTAGE.value else 10.0,
+                                            step=1.0,
+                                            key=f"edit_{cat.value}_rate_pct",
+                                            label_visibility="collapsed"
+                                        )
+                                    
+                                    updated_rates.append({
+                                        'category': cat.value,
+                                        'commission_type': new_type,
+                                        'rate': float(new_rate)
+                                    })
+                            
+                            save_col, cancel_col = st.columns(2)
+                            with save_col:
+                                if st.button("💾 Save Changes", key="save_rates_selected", type="primary", use_container_width=True):
+                                    try:
+                                        self.db.update_doc(
+                                            DBCollectionNames.REGISTERED_DOCTORS.value,
+                                            selected_doctor.get('id'),
+                                            {"commission_rates": updated_rates}
+                                        )
+                                        st.success("✅ Commission rates updated!")
+                                        st.session_state.doctor_panel = None
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Error updating rates: {str(e)}")
+                            with cancel_col:
+                                if st.button("❌ Cancel", key="cancel_edit_rates", use_container_width=True):
+                                    st.session_state.doctor_panel = None
+                                    st.rerun()
+                        
+                        elif current_panel == 'view_stats':
+                            st.markdown("---")
+                            st.markdown("#### 📈 Referral Statistics")
+                            
+                            date_col1, date_col2 = st.columns(2)
+                            with date_col1:
+                                start_date = st.date_input(
+                                    "From Date",
+                                    value=datetime(2026, 3, 1).date(),
+                                    key="doctor_stats_start_date"
+                                )
+                            with date_col2:
+                                end_date = st.date_input(
+                                    "To Date",
+                                    value=get_ist_now().date(),
+                                    key="doctor_stats_end_date"
+                                )
+                            
+                            if start_date and end_date:
+                                start_datetime = datetime.combine(start_date, datetime.min.time())
+                                end_datetime = datetime.combine(end_date, datetime.max.time())
+                                
+                                try:
+                                    date_range_records = self.db.get_docs(
+                                        medical_collection,
+                                        filters=[
+                                            ("referral_info.doctor_id", "==", doctor_id_for_query),
+                                            ("date", ">=", start_datetime),
+                                            ("date", "<=", end_datetime)
+                                        ],
+                                        limit=5000
+                                    )
+                                    
+                                    patients_referred = len(date_range_records)
+                                    total_commission = 0
+                                    for record in date_range_records:
+                                        referral_info = record.get('referral_info', {})
+                                        if referral_info and isinstance(referral_info, dict):
+                                            total_commission += referral_info.get('total_commission', 0)
+                                    
+                                    stats_col1, stats_col2 = st.columns(2)
+                                    with stats_col1:
+                                        st.metric("👥 Patients Referred", patients_referred)
+                                    with stats_col2:
+                                        st.metric("💰 Total Commission", f"₹{total_commission:,.0f}")
+                                        
+                                except Exception as e:
+                                    st.error(f"Error fetching statistics: {str(e)}")
+                            
+                            if st.button("❌ Close", key="close_stats", use_container_width=True):
+                                st.session_state.doctor_panel = None
+                                st.rerun()
+                        
+                        elif current_panel == 'delete':
+                            st.markdown("---")
+                            st.markdown("#### 🗑️ Delete Doctor")
+                            
+                            march_1_2026 = datetime(2026, 3, 1)
+                            try:
+                                linked_records = self.db.get_docs(
+                                    medical_collection,
+                                    filters=[
+                                        ("referral_info.doctor_id", "==", doctor_id_for_query),
+                                        ("date", ">=", march_1_2026)
+                                    ],
+                                    limit=5000
+                                )
+                                linked_count = len(linked_records)
+                            except Exception:
+                                linked_count = 0
+                            
+                            st.warning(f"⚠️ Are you sure you want to delete **Dr. {selected_doctor.get('name')}**?")
                             if linked_count > 0:
-                                st.error(f"This doctor has {linked_count} linked medical records!")
-                            col_yes, col_no = st.columns(2)
-                            with col_yes:
-                                if st.button("✅ Yes, Delete", key="confirm_delete_yes", type="primary"):
+                                st.error(f"⚠️ This doctor has **{linked_count}** linked medical records since Mar 1, 2026!")
+                            else:
+                                st.info("This doctor has no linked medical records since Mar 1, 2026.")
+                            
+                            del_col1, del_col2 = st.columns(2)
+                            with del_col1:
+                                if st.button("✅ Yes, Delete", key="confirm_delete_yes", type="primary", use_container_width=True):
                                     try:
                                         self.db.delete_doc(
                                             DBCollectionNames.REGISTERED_DOCTORS.value,
                                             selected_doctor.get('id')
                                         )
-                                        st.session_state.confirm_delete_doctor = None
+                                        st.session_state.selected_doctor_id = None
+                                        st.session_state.doctor_panel = None
                                         st.success(f"✅ Dr. {selected_doctor.get('name')} deleted.")
                                         st.rerun()
                                     except Exception as e:
                                         st.error(f"Error deleting doctor: {str(e)}")
-                            with col_no:
-                                if st.button("❌ Cancel", key="confirm_delete_no"):
-                                    st.session_state.confirm_delete_doctor = None
+                            with del_col2:
+                                if st.button("❌ Cancel", key="cancel_delete", use_container_width=True):
+                                    st.session_state.doctor_panel = None
                                     st.rerun()
-                    
-                    st.markdown("---")
-                    st.markdown("**💰 Edit Commission Rates:**")
-                    
-                    # Display and edit commission rates - only for selected doctor
-                    col1, col2, col3, col4 = st.columns(4)
-                    
-                    commission_rates = selected_doctor.get('commission_rates', [])
-                    rate_lookup = {cr.get('category'): cr for cr in commission_rates}
-                    
-                    updated_rates = []
-                    for i, (cat, label, default_type, default_rate) in enumerate(categories_config):
-                        col = [col1, col2, col3, col4][i % 4]
-                        existing = rate_lookup.get(cat.value, {})
-                        current_type = existing.get('commission_type', default_type.value if hasattr(default_type, 'value') else default_type)
-                        current_rate = existing.get('rate', default_rate)
-                        
-                        with col:
-                            st.markdown(f"**{label}**")
-                            new_type = st.selectbox(
-                                f"Type",
-                                options=[CommissionType.FIXED.value, CommissionType.PERCENTAGE.value],
-                                index=0 if current_type == CommissionType.FIXED.value else 1,
-                                key=f"edit_{cat.value}_type",
-                                label_visibility="collapsed"
-                            )
-                            if new_type == CommissionType.FIXED.value:
-                                new_rate = st.number_input(
-                                    f"₹",
-                                    min_value=0,
-                                    max_value=10000,
-                                    value=int(current_rate) if current_type == CommissionType.FIXED.value else 100,
-                                    step=10,
-                                    key=f"edit_{cat.value}_rate",
-                                    label_visibility="collapsed"
-                                )
-                            else:
-                                new_rate = st.number_input(
-                                    f"%",
-                                    min_value=0.0,
-                                    max_value=100.0,
-                                    value=float(current_rate) if current_type == CommissionType.PERCENTAGE.value else 10.0,
-                                    step=1.0,
-                                    key=f"edit_{cat.value}_rate_pct",
-                                    label_visibility="collapsed"
-                                )
-                            
-                            updated_rates.append({
-                                'category': cat.value,
-                                'commission_type': new_type,
-                                'rate': float(new_rate)
-                            })
-                    
-                    # Save button for commission rates
-                    if st.button("💾 Save Commission Rates", key="save_rates_selected", type="primary"):
-                        try:
-                            self.db.update_doc(
-                                DBCollectionNames.REGISTERED_DOCTORS.value,
-                                selected_doctor.get('id'),
-                                {"commission_rates": updated_rates}
-                            )
-                            st.success("✅ Commission rates updated!")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Error updating rates: {str(e)}")
-                    
-                    st.markdown("---")
-                    
-                    # Date range selector for referral statistics
-                    st.markdown("**📈 Referral Statistics**")
-                    
-                    date_col1, date_col2 = st.columns(2)
-                    with date_col1:
-                        start_date = st.date_input(
-                            "From Date",
-                            value=datetime(2026, 3, 1).date(),
-                            key="doctor_stats_start_date"
-                        )
-                    with date_col2:
-                        end_date = st.date_input(
-                            "To Date",
-                            value=get_ist_now().date(),
-                            key="doctor_stats_end_date"
-                        )
-                    
-                    # Query records for the selected date range
-                    if start_date and end_date:
-                        start_datetime = datetime.combine(start_date, datetime.min.time())
-                        end_datetime = datetime.combine(end_date, datetime.max.time())
-                        
-                        try:
-                            date_range_records = self.db.get_docs(
-                                medical_collection,
-                                filters=[
-                                    ("referral_info.doctor_id", "==", doctor_id_for_query),
-                                    ("date", ">=", start_datetime),
-                                    ("date", "<=", end_datetime)
-                                ],
-                                limit=5000
-                            )
-                            
-                            # Calculate statistics
-                            patients_referred = len(date_range_records)
-                            total_commission = 0
-                            for record in date_range_records:
-                                referral_info = record.get('referral_info', {})
-                                if referral_info and isinstance(referral_info, dict):
-                                    total_commission += referral_info.get('total_commission', 0)
-                            
-                            # Display statistics
-                            stats_col1, stats_col2 = st.columns(2)
-                            with stats_col1:
-                                st.metric("👥 Patients Referred", patients_referred)
-                            with stats_col2:
-                                st.metric("💰 Total Commission", f"₹{total_commission:,.0f}")
-                                
-                        except Exception as e:
-                            st.error(f"Error fetching statistics: {str(e)}")
-                    
-                    st.markdown("---")
-            
-            # Display all doctors as a simple list (read-only, fast)
-            st.markdown("#### All Doctors")
-            for doctor in display_doctors:
-                is_active = doctor.get('is_active', True)
-                status_icon = "🟢" if is_active else "🔴"
-                commission_rates = doctor.get('commission_rates', [])
-                
-                # Build commission summary for all rates
-                rate_summary = []
-                for cr in commission_rates:
-                    cat = cr.get('category', '')
-                    ctype = cr.get('commission_type', '')
-                    rate = cr.get('rate', 0)
-                    if ctype == CommissionType.PERCENTAGE.value:
-                        rate_summary.append(f"{cat}:{rate}%")
-                    else:
-                        rate_summary.append(f"{cat}:₹{int(rate)}")
-                
-                summary_text = " | ".join(rate_summary) if rate_summary else "No rates set"
-                phone_text = f" 📞 {doctor.get('phone')}" if doctor.get('phone') else ""
-                
-                st.markdown(f"{status_icon} **Dr. {doctor.get('name', 'Unknown')}** - {doctor.get('location', '')}{phone_text}")
-                st.caption(f"   Rates: {summary_text}")
 
 
 # Cached function to compute referral report data
