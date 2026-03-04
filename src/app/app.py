@@ -1810,7 +1810,7 @@ class OpeningScreen:
         try:
             doctors = self.db.get_docs(
                 DBCollectionNames.REGISTERED_DOCTORS.value,
-                limit=200
+                limit=2000
             )
         except Exception as e:
             st.error(f"Error loading doctors: {str(e)}")
