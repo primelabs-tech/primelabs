@@ -1847,7 +1847,7 @@ class OpeningScreen:
                         # Show ALL commission rates in a grid
                         commission_rates = doc.get('commission_rates', [])
                         if commission_rates:
-                            st.markdown("**💰 Revenue Rates:**")
+                            st.markdown("**💰 Commission Rates:**")
                             # Display rates in 4 columns
                             rate_cols = st.columns(4)
                             for i, cr in enumerate(commission_rates):
@@ -1860,7 +1860,7 @@ class OpeningScreen:
                                     else:
                                         st.caption(f"**{cat}:** ₹{int(rate)}")
                         else:
-                            st.caption("**💰 Revenue Rates:** Not set")
+                            st.caption("**💰 Commission Rates:** Not set")
                         
                         # Action buttons
                         btn_col1, btn_col2, btn_col3 = st.columns([1, 1, 2])
@@ -1942,9 +1942,9 @@ class OpeningScreen:
         """Render the Doctor Registry management interface - Owner only"""
         st.subheader("👨‍⚕️ Registered Doctors")
         st.info("""
-        💡 **Why this matters:** Only you (the owner) can register doctors and set their revenue rates.
-        Each doctor has **different revenue rates for different test categories** (USG, X-Ray, CT-Scan, Pathology, etc.).
-        When a medical record is created with a referral, the revenue is automatically calculated based on these rates.
+        💡 **Why this matters:** Only you (the owner) can register doctors and set their commission rates.
+        Each doctor has **different commission rates for different test categories** (USG, X-Ray, CT-Scan, Pathology, etc.).
+        When a medical record is created with a referral, the commission is automatically calculated based on these rates.
         """)
         
         # Categories config - used for both new doctor form and editing
@@ -2016,8 +2016,8 @@ class OpeningScreen:
                 )
             
             st.markdown("---")
-            st.markdown("#### Revenue Rates by Test Category")
-            st.caption("Set the revenue rate for each test category. Leave as default if not specified.")
+            st.markdown("#### Commission Rates by Test Category")
+            st.caption("Set the commission rate for each test category. Leave as default if not specified.")
             
             # Create a grid for commission rates
             col1, col2, col3, col4 = st.columns(4)
@@ -2208,7 +2208,7 @@ class OpeningScreen:
                         # Current rates display
                         commission_rates = selected_doctor.get('commission_rates', [])
                         if commission_rates:
-                            st.markdown("**Current Revenue Rates:**")
+                            st.markdown("**Current Commission Rates:**")
                             rate_cols = st.columns(4)
                             for idx, cr in enumerate(commission_rates):
                                 with rate_cols[idx % 4]:
@@ -2262,7 +2262,7 @@ class OpeningScreen:
                         
                         if current_panel == 'edit_rates':
                             st.markdown("---")
-                            st.markdown("#### 💰 Edit Revenue Rates")
+                            st.markdown("#### 💰 Edit Commission Rates")
                             
                             col1, col2, col3, col4 = st.columns(4)
                             rate_lookup = {cr.get('category'): cr for cr in commission_rates}
@@ -2319,7 +2319,7 @@ class OpeningScreen:
                                             selected_doctor.get('id'),
                                             {"commission_rates": updated_rates}
                                         )
-                                        st.success("✅ Revenue rates updated!")
+                                        st.success("✅ Commission rates updated!")
                                         st.session_state.doctor_panel = None
                                         st.rerun()
                                     except Exception as e:
@@ -2373,7 +2373,7 @@ class OpeningScreen:
                                     with stats_col1:
                                         st.metric("👥 Patients Referred", patients_referred)
                                     with stats_col2:
-                                        st.metric("💰 Total Revenue", f"₹{total_commission:,.0f}")
+                                        st.metric("💰 Total Commission", f"₹{total_commission:,.0f}")
                                         
                                 except Exception as e:
                                     st.error(f"Error fetching statistics: {str(e)}")
@@ -2763,7 +2763,7 @@ class DailyReportPage:
         
         # Commission info for subtitle (only visible to Admin/Manager)
         can_view_commissions = self.can_view_commissions()
-        commission_text = f" · ₹{total_commission:,} revenue" if (total_commission > 0 and can_view_commissions) else ""
+        commission_text = f" · ₹{total_commission:,} commission" if (total_commission > 0 and can_view_commissions) else ""
         
         st.markdown(f"""
         <div style="
@@ -2827,7 +2827,7 @@ class DailyReportPage:
                             if doctor_name:
                                 if can_view_commissions:
                                     commission = referral_info.get('total_commission', 0)
-                                    st.caption(f"🤝 Referred by: Dr. {doctor_name} (₹{commission:,} revenue)")
+                                    st.caption(f"🤝 Referred by: Dr. {doctor_name} (₹{commission:,} commission)")
                                 else:
                                     st.caption(f"🤝 Referred by: Dr. {doctor_name}")
                         
@@ -2870,21 +2870,21 @@ class DailyReportPage:
         # Commission section (only show if there are commissions AND user is Admin/Manager)
         if total_commission > 0 and can_view_commissions:
             st.markdown("---")
-            st.markdown("### 🤝 Doctor Revenue")
+            st.markdown("### 🤝 Doctor Commissions")
             
-            revenue_label = "Total Revenue Due Today" if (not is_admin or selected_date == today_date) else f"Total Revenue Due ({selected_date.strftime('%d %b %Y')})"
+            commission_label = "Total Commission Due Today" if (not is_admin or selected_date == today_date) else f"Total Commission Due ({selected_date.strftime('%d %b %Y')})"
             st.metric(
-                label=revenue_label,
+                label=commission_label,
                 value=f"₹{total_commission:,}",
-                help="Total revenue payable to referring doctors"
+                help="Total commission payable to referring doctors"
             )
             
             # Count referral records
             referral_count = sum(1 for r in records if r.get('referral_info'))
-            st.info(f"📋 {referral_count} referral(s) with revenue")
+            st.info(f"📋 {referral_count} referral(s) with commission")
             
             # Show commission breakdown by doctor
-            with st.expander("📄 View Revenue Details", expanded=False):
+            with st.expander("📄 View Commission Details", expanded=False):
                 # Group commissions by doctor
                 commissions_by_doctor = {}
                 for record in records:
@@ -2972,7 +2972,7 @@ class DailyReportPage:
         status_icon = "📈" if is_profit else "📉"
         
         # Commission info for subtitle
-        commission_text = f" · ₹{total_commission:,} revenue" if total_commission > 0 else ""
+        commission_text = f" · ₹{total_commission:,} commission" if total_commission > 0 else ""
         
         st.markdown(f"""
         <div style="
@@ -3091,20 +3091,20 @@ class DailyReportPage:
         # Commission section (only show if there are commissions)
         if total_commission > 0:
             st.markdown("---")
-            st.markdown("### 🤝 Doctor Revenue")
+            st.markdown("### 🤝 Doctor Commissions")
             
             st.metric(
-                label=f"Total Revenue Due - {selected_month_name} {selected_year}",
+                label=f"Total Commission Due - {selected_month_name} {selected_year}",
                 value=f"₹{total_commission:,}",
-                help="Total revenue payable to referring doctors this month"
+                help="Total commission payable to referring doctors this month"
             )
             
             # Count referral records
             referral_count = sum(1 for r in records if r.get('referral_info'))
-            st.info(f"📋 {referral_count} referral(s) with revenue this month")
+            st.info(f"📋 {referral_count} referral(s) with commission this month")
             
             # Show commission breakdown by doctor
-            with st.expander("📄 View Revenue Details by Doctor", expanded=False):
+            with st.expander("📄 View Commission Details by Doctor", expanded=False):
                 # Group commissions by doctor
                 commissions_by_doctor = {}
                 for record in records:
@@ -3118,7 +3118,7 @@ class DailyReportPage:
                             commissions_by_doctor[doctor_name]['total'] += commission
                             commissions_by_doctor[doctor_name]['count'] += 1
                 
-                st.markdown("**Revenue Summary by Doctor:**")
+                st.markdown("**Commission Summary by Doctor:**")
                 for doctor_name, data in sorted(commissions_by_doctor.items(), key=lambda x: x[1]['total'], reverse=True):
                     st.markdown(f"• **Dr. {doctor_name}**: ₹{data['total']:,} ({data['count']} patient(s))")
         
@@ -3219,17 +3219,17 @@ class DailyReportPage:
                 location_text = f" ({data['location']})" if data['location'] else ""
                 commission_pct = (data['total_commission'] / data['total_revenue'] * 100) if data['total_revenue'] > 0 else 0
                 
-                with st.expander(f"**Dr. {doctor_name}**{location_text} — ₹{data['total_commission']:,} revenue", expanded=False):
+                with st.expander(f"**Dr. {doctor_name}**{location_text} — ₹{data['total_commission']:,} commission", expanded=False):
                     # Doctor summary metrics
                     col1, col2, col3 = st.columns(3)
                     with col1:
-                        st.metric("Total Revenue", f"₹{data['total_commission']:,}")
+                        st.metric("Total Commission", f"₹{data['total_commission']:,}")
                     with col2:
                         st.metric("Patients Referred", data['patient_count'])
                     with col3:
-                        st.metric("Test Revenue", f"₹{data['total_revenue']:,}")
+                        st.metric("Revenue Generated", f"₹{data['total_revenue']:,}")
                     
-                    st.caption(f"Average revenue rate: {commission_pct:.1f}%")
+                    st.caption(f"Average commission rate: {commission_pct:.1f}%")
                     
                     # Patient details
                     st.markdown("**Patient Details:**")
@@ -3240,7 +3240,7 @@ class DailyReportPage:
                                 if isinstance(t, dict):
                                     test_names.append(t.get('test_name', ''))
                         tests_text = f" ({', '.join(test_names)})" if test_names else ""
-                        st.caption(f"{i}. {patient['name']}: ₹{patient['payment']:,} → ₹{patient['commission']:,} revenue{tests_text}")
+                        st.caption(f"{i}. {patient['name']}: ₹{patient['payment']:,} → ₹{patient['commission']:,} commission{tests_text}")
         
         # Refresh button
         st.markdown("---")
@@ -3344,10 +3344,10 @@ class ManagerPage:
             )
         
         st.markdown("---")
-        st.markdown("#### Revenue Rates by Test Category")
-        st.caption("Set the revenue rate for each test category. Leave as default if not specified.")
+        st.markdown("#### Commission Rates by Test Category")
+        st.caption("Set the commission rate for each test category. Leave as default if not specified.")
         
-        # Create a grid for revenue rates
+        # Create a grid for commission rates
         col1, col2, col3, col4 = st.columns(4)
         
         for i, (cat, label, default_type, default_rate) in enumerate(self.categories_config):
