@@ -2260,6 +2260,7 @@ class OpeningScreen:
                                         )
                                         st.session_state.selected_doctor_id = None
                                         st.session_state.doctor_panel = None
+                                        get_all_doctors_cached.clear()
                                         st.success(f"✅ Dr. {selected_doctor.get('name')} deleted.")
                                         st.rerun()
                                     except Exception as e:
