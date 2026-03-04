@@ -41,13 +41,20 @@ USER_DB_COLLECTION = "users"
 
 
 @st.cache_data(ttl=300)  # Cache for 5 minutes
-def get_active_doctors():
-    """Fetch all active registered doctors (cached)."""
+def get_all_doctors_cached():
+    """Fetch all registered doctors (cached). Used internally to reduce Firestore reads."""
     db = get_firestore()
     return db.get_docs(
         DBCollectionNames.REGISTERED_DOCTORS.value,
         limit=1000
     )
+
+
+def get_active_doctors():
+    """Fetch all active registered doctors. Only returns doctors with is_active=True."""
+    all_doctors = get_all_doctors_cached()
+    # Filter to only return active doctors
+    return [d for d in all_doctors if d.get('is_active', True)]
 
 
 def get_test_category(test_name: str, test_price: int) -> TestCategory:
@@ -1503,11 +1510,11 @@ class OpeningScreen:
             
             st.markdown("---")
             
-            # Tabs for different sections - Doctor Registry only for owners
+            # Tabs for different sections - Doctor Registry only for owners, Doctor Approvals for all admins
             if is_owner:
-                tab1, tab2, tab3, tab4 = st.tabs(["👥 Manage Users", "⏳ Pending Approvals", "🚫 Rejected Users", "👨‍⚕️ Doctor Registry"])
+                tab1, tab2, tab3, tab4, tab5 = st.tabs(["👥 Manage Users", "⏳ Pending Approvals", "🚫 Rejected Users", "👨‍⚕️ Doctor Approvals", "👨‍⚕️ Doctor Registry"])
             else:
-                tab1, tab2, tab3 = st.tabs(["👥 Manage Users", "⏳ Pending Approvals", "🚫 Rejected Users"])
+                tab1, tab2, tab3, tab4 = st.tabs(["👥 Manage Users", "⏳ Pending Approvals", "🚫 Rejected Users", "👨‍⚕️ Doctor Approvals"])
             
             with tab1:
                 st.subheader("User Role & Status Management")
@@ -1773,13 +1780,163 @@ class OpeningScreen:
                             
                             st.divider()
             
+            # Doctor Approvals tab (for all admins)
+            with tab4:
+                self._render_doctor_approvals()
+            
             # Doctor Registry tab (Owner only)
             if is_owner:
-                with tab4:
+                with tab5:
                     self._render_doctor_registry()
                 
         except Exception as e:
             st.error(f"Error loading user management: {str(e)}")
+    
+    def _render_doctor_approvals(self):
+        """Render the Doctor Approvals interface - for Admin users to approve/reject doctors added by managers"""
+        st.subheader("👨‍⚕️ Doctor Approvals")
+        st.info("""
+        💡 **Review and approve doctors** added by managers. Only approved (active) doctors will appear 
+        as referral options in the Medical Records page.
+        """)
+        
+        try:
+            # Use cached function to get all doctors (reduces Firestore reads)
+            all_doctors = get_all_doctors_cached()
+            
+            # Separate pending (inactive) and active doctors
+            pending_doctors = [d for d in all_doctors if not d.get('is_active', True)]
+            active_doctors = [d for d in all_doctors if d.get('is_active', True)]
+            
+            # Stats
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("🔴 Pending Approval", len(pending_doctors))
+            with col2:
+                st.metric("🟢 Active Doctors", len(active_doctors))
+            
+            st.markdown("---")
+            
+            # Pending Approvals Section
+            st.markdown("### ⏳ Pending Doctor Approvals")
+            
+            if not pending_doctors:
+                st.success("✅ No pending doctor approvals.")
+            else:
+                for idx, doc in enumerate(pending_doctors):
+                    doctor_id = doc.get('id')
+                    doctor_name = doc.get('name', 'Unknown')
+                    doctor_location = doc.get('location', 'N/A')
+                    doctor_phone = doc.get('phone') or 'Not provided'
+                    created_by = doc.get('created_by_email', 'Unknown')
+                    notes = doc.get('notes') or 'None'
+                    
+                    with st.container():
+                        # Doctor info header
+                        col1, col2 = st.columns([3, 2])
+                        
+                        with col1:
+                            st.markdown(f"**🔴 Dr. {doctor_name}**")
+                            st.caption(f"📍 {doctor_location} | 📞 {doctor_phone}")
+                        
+                        with col2:
+                            st.caption(f"**Added by:** {created_by}")
+                            if notes != 'None':
+                                st.caption(f"**Notes:** {notes}")
+                        
+                        # Show ALL commission rates in a grid
+                        commission_rates = doc.get('commission_rates', [])
+                        if commission_rates:
+                            st.markdown("**💰 Commission Rates:**")
+                            # Display rates in 4 columns
+                            rate_cols = st.columns(4)
+                            for i, cr in enumerate(commission_rates):
+                                cat = cr.get('category', '').replace('_', '-')
+                                rate = cr.get('rate', 0)
+                                ctype = cr.get('commission_type', '')
+                                with rate_cols[i % 4]:
+                                    if ctype == CommissionType.PERCENTAGE.value:
+                                        st.caption(f"**{cat}:** {rate}%")
+                                    else:
+                                        st.caption(f"**{cat}:** ₹{int(rate)}")
+                        else:
+                            st.caption("**💰 Commission Rates:** Not set")
+                        
+                        # Action buttons
+                        btn_col1, btn_col2, btn_col3 = st.columns([1, 1, 2])
+                        
+                        with btn_col1:
+                            if st.button("✅ Approve", key=f"approve_doc_{idx}_{doctor_id}", type="primary", use_container_width=True):
+                                try:
+                                    self.db.update_doc(
+                                        DBCollectionNames.REGISTERED_DOCTORS.value,
+                                        doctor_id,
+                                        {
+                                            "is_active": True,
+                                            "approved_by": st.session_state.user_email,
+                                            "approved_at": get_ist_now_str()
+                                        }
+                                    )
+                                    # Clear the cache for doctors
+                                    get_all_doctors_cached.clear()
+                                    st.success(f"✅ Approved Dr. {doctor_name}")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error approving doctor: {str(e)}")
+                        
+                        with btn_col2:
+                            if st.button("❌ Reject", key=f"reject_doc_{idx}_{doctor_id}", use_container_width=True):
+                                try:
+                                    # Delete the doctor record (rejected)
+                                    self.db.delete_doc(
+                                        DBCollectionNames.REGISTERED_DOCTORS.value,
+                                        doctor_id
+                                    )
+                                    get_all_doctors_cached.clear()
+                                    st.warning(f"❌ Rejected and removed Dr. {doctor_name}")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error rejecting doctor: {str(e)}")
+                        
+                        st.divider()
+            
+            st.markdown("---")
+            
+            # Quick view of active doctors
+            st.markdown("### 🟢 Active Doctors")
+            
+            if not active_doctors:
+                st.info("No active doctors in the system.")
+            else:
+                # Sort by name
+                active_doctors = sorted(active_doctors, key=lambda x: x.get('name', '').lower())
+                
+                # Display in a compact format
+                for doc in active_doctors[:20]:  # Show first 20
+                    col1, col2, col3 = st.columns([3, 2, 1])
+                    with col1:
+                        st.caption(f"🟢 **Dr. {doc.get('name', 'Unknown')}**")
+                    with col2:
+                        st.caption(f"📍 {doc.get('location', 'N/A')}")
+                    with col3:
+                        # Deactivate button
+                        if st.button("🚫", key=f"deactivate_{doc.get('id')}", help="Deactivate this doctor"):
+                            try:
+                                self.db.update_doc(
+                                    DBCollectionNames.REGISTERED_DOCTORS.value,
+                                    doc.get('id'),
+                                    {"is_active": False}
+                                )
+                                get_all_doctors_cached.clear()
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Error: {str(e)}")
+                
+                if len(active_doctors) > 20:
+                    st.caption(f"... and {len(active_doctors) - 20} more active doctors")
+                    
+        except Exception as e:
+            st.error(f"Error loading doctor approvals: {str(e)}")
     
     def _render_doctor_registry(self):
         """Render the Doctor Registry management interface - Owner only"""
@@ -1806,12 +1963,9 @@ class OpeningScreen:
         if 'selected_doctor_id' not in st.session_state:
             st.session_state.selected_doctor_id = None
         
-        # Fetch doctors once
+        # Fetch doctors once (using cached function to reduce Firestore reads)
         try:
-            doctors = self.db.get_docs(
-                DBCollectionNames.REGISTERED_DOCTORS.value,
-                limit=2000
-            )
+            doctors = get_all_doctors_cached()
         except Exception as e:
             st.error(f"Error loading doctors: {str(e)}")
             doctors = []
@@ -2087,6 +2241,7 @@ class OpeningScreen:
                                         selected_doctor.get('id'),
                                         {"is_active": False}
                                     )
+                                    get_all_doctors_cached.clear()
                                     st.rerun()
                             else:
                                 if st.button("✅ Activate", key="btn_activate", use_container_width=True):
@@ -2095,6 +2250,7 @@ class OpeningScreen:
                                         selected_doctor.get('id'),
                                         {"is_active": True}
                                     )
+                                    get_all_doctors_cached.clear()
                                     st.rerun()
                         
                         with btn_col4:
@@ -2260,6 +2416,7 @@ class OpeningScreen:
                                         )
                                         st.session_state.selected_doctor_id = None
                                         st.session_state.doctor_panel = None
+                                        get_all_doctors_cached.clear()
                                         st.success(f"✅ Dr. {selected_doctor.get('name')} deleted.")
                                         st.rerun()
                                     except Exception as e:
@@ -3095,6 +3252,242 @@ class DailyReportPage:
                 st.rerun()
 
 
+class ManagerPage:
+    """Manager page for adding doctors (inactive by default) - accessible to Managers, Admins, and Owners"""
+    
+    def __init__(self):
+        self.db = get_firestore()
+        
+        # Categories config - used for commission rates
+        self.categories_config = [
+            (TestCategory.USG_750, "USG-750", CommissionType.FIXED, 250),
+            (TestCategory.USG_1200, "USG-1200", CommissionType.FIXED, 300),
+            (TestCategory.XRAY_350, "X-RAY-350", CommissionType.FIXED, 100),
+            (TestCategory.XRAY_450, "X-RAY-450", CommissionType.FIXED, 100),
+            (TestCategory.XRAY_650, "X-RAY-650", CommissionType.FIXED, 150),
+            (TestCategory.ECG, "ECG", CommissionType.FIXED, 100),
+            (TestCategory.CT_SCAN, "CT-SCAN", CommissionType.PERCENTAGE, 40),
+            (TestCategory.PATH, "PATH", CommissionType.PERCENTAGE, 50),
+        ]
+    
+    def render(self, is_authorized: bool = False):
+        if not is_authorized:
+            st.warning("🔐 You need to be logged in and approved to access this page.")
+            return
+        
+        # Header with improved styling
+        st.markdown("""
+        <div style="text-align: center; padding: 20px 0;">
+            <h1 style="color: #9b59b6; margin-bottom: 10px;">👔 Manager Dashboard</h1>
+            <p style="color: #666; font-size: 16px;">Add new doctors to the system</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("---")
+        
+        # Single tab for now - Add Doctors
+        tab1, = st.tabs(["👨‍⚕️ Add Doctors"])
+        
+        with tab1:
+            self._render_add_doctors_tab()
+    
+    def _render_add_doctors_tab(self):
+        """Render the Add Doctors tab"""
+        st.subheader("➕ Add New Doctor")
+        st.info("""
+        💡 **Note:** Doctors added through this page will be **inactive** by default.
+        They will need to be approved by an Admin before they can be used for referrals in the system.
+        """)
+        
+        # Show test categories reference
+        with st.expander("📋 Test Categories Reference", expanded=False):
+            st.markdown("""
+            | Category | Description | Default Rate |
+            |----------|-------------|--------------|
+            | **USG-750** | Ultrasound tests at ₹750 | ₹250 fixed |
+            | **USG-1200** | Ultrasound tests at ₹1200 | ₹300 fixed |
+            | **X-RAY-350** | X-Ray tests up to ₹350 | ₹100 fixed |
+            | **X-RAY-450** | X-Ray tests ₹351-450 | ₹100 fixed |
+            | **X-RAY-650** | X-Ray tests above ₹450 | ₹150 fixed |
+            | **ECG** | ECG tests | ₹100 fixed |
+            | **CT-SCAN** | All CT Scan tests | 40% |
+            | **PATH** | Pathology/Blood tests | 50% |
+            """)
+        
+        # Add new doctor form
+        st.markdown("#### Basic Information")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            new_doctor_name = st.text_input(
+                "Doctor's Full Name *",
+                placeholder="Dr. [Name]",
+                key="manager_doctor_name"
+            )
+            new_doctor_location = st.text_input(
+                "Clinic/Hospital Location *",
+                placeholder="Clinic name and location",
+                key="manager_doctor_location"
+            )
+        
+        with col2:
+            new_doctor_phone = st.text_input(
+                "Phone Number (optional)",
+                placeholder="+91 98765 43210",
+                key="manager_doctor_phone"
+            )
+            new_doctor_notes = st.text_area(
+                "Notes (optional)",
+                placeholder="Any notes about this doctor...",
+                key="manager_doctor_notes",
+                height=68
+            )
+        
+        st.markdown("---")
+        st.markdown("#### Commission Rates by Test Category")
+        st.caption("Set the commission rate for each test category. Leave as default if not specified.")
+        
+        # Create a grid for commission rates
+        col1, col2, col3, col4 = st.columns(4)
+        
+        for i, (cat, label, default_type, default_rate) in enumerate(self.categories_config):
+            col = [col1, col2, col3, col4][i % 4]
+            with col:
+                st.markdown(f"**{label}**")
+                rate_type = st.selectbox(
+                    f"Type",
+                    options=[CommissionType.FIXED, CommissionType.PERCENTAGE],
+                    index=0 if default_type == CommissionType.FIXED else 1,
+                    key=f"manager_doc_{cat.value}_type",
+                    label_visibility="collapsed"
+                )
+                if rate_type == CommissionType.FIXED:
+                    rate_val = st.number_input(
+                        f"₹",
+                        min_value=0,
+                        max_value=10000,
+                        value=default_rate if default_type == CommissionType.FIXED else 100,
+                        step=10,
+                        key=f"manager_doc_{cat.value}_rate",
+                        label_visibility="collapsed"
+                    )
+                else:
+                    rate_val = st.number_input(
+                        f"%",
+                        min_value=0.0,
+                        max_value=100.0,
+                        value=float(default_rate) if default_type == CommissionType.PERCENTAGE else 10.0,
+                        step=1.0,
+                        key=f"manager_doc_{cat.value}_rate_pct",
+                        label_visibility="collapsed"
+                    )
+                st.caption(f"{'₹' if rate_type == CommissionType.FIXED else ''}{rate_val}{'%' if rate_type == CommissionType.PERCENTAGE else ''}")
+        
+        st.markdown("---")
+        
+        # Register button
+        can_register = new_doctor_name and len(new_doctor_name.strip()) >= 2 and new_doctor_location and len(new_doctor_location.strip()) >= 2
+        
+        if st.button("✅ Add Doctor (Pending Approval)", disabled=not can_register, key="manager_register_doctor_btn", type="primary"):
+            try:
+                import uuid
+                doctor_id = str(uuid.uuid4())[:8]
+                
+                # Collect commission rates from inputs
+                commission_rates = []
+                for cat, label, default_type, default_rate in self.categories_config:
+                    rate_type_key = f"manager_doc_{cat.value}_type"
+                    rate_type = st.session_state.get(rate_type_key, default_type)
+                    
+                    if rate_type == CommissionType.FIXED:
+                        rate_val = st.session_state.get(f"manager_doc_{cat.value}_rate", default_rate)
+                    else:
+                        rate_val = st.session_state.get(f"manager_doc_{cat.value}_rate_pct", default_rate)
+                    
+                    commission_rates.append(TestCommissionRate(
+                        category=cat,
+                        commission_type=rate_type,
+                        rate=float(rate_val)
+                    ))
+                
+                # Create doctor with is_active=False (pending approval)
+                current_user_email = st.session_state.get('user_email', '')
+                if not current_user_email:
+                    st.error("Session expired. Please log in again.")
+                    return
+                    
+                new_doctor = RegisteredDoctor(
+                    doctor_id=doctor_id,
+                    name=new_doctor_name.strip(),
+                    location=new_doctor_location.strip(),
+                    phone=new_doctor_phone.strip() if new_doctor_phone else None,
+                    commission_rates=commission_rates,
+                    is_active=False,  # Inactive by default - needs admin approval
+                    created_by_email=current_user_email,
+                    notes=new_doctor_notes.strip() if new_doctor_notes else None
+                )
+                
+                self.db.create_doc(
+                    DBCollectionNames.REGISTERED_DOCTORS.value,
+                    new_doctor.model_dump(),
+                    doc_id=doctor_id
+                )
+                
+                st.success(f"✅ Successfully added Dr. {new_doctor_name} (Pending Admin Approval)")
+                
+                # Clear the cache for doctors
+                get_all_doctors_cached.clear()
+                
+                # Clear form fields
+                for key in list(st.session_state.keys()):
+                    if key.startswith('manager_doc_') or key.startswith('manager_doctor_'):
+                        del st.session_state[key]
+                
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error adding doctor: {str(e)}")
+        
+        st.markdown("---")
+        
+        # Show recently added doctors by this user (pending approval)
+        st.markdown("### 📋 Your Recently Added Doctors (Pending Approval)")
+        
+        try:
+            # Get current user email safely
+            current_user_email = st.session_state.get('user_email', '')
+            if not current_user_email:
+                st.info("No pending doctor approvals.")
+                return
+            
+            # Use cached function to get all doctors (reduces Firestore reads)
+            all_doctors = get_all_doctors_cached()
+            
+            # Filter for inactive doctors created by current user
+            pending_doctors = [
+                d for d in all_doctors 
+                if not d.get('is_active', True) and d.get('created_by_email') == current_user_email
+            ]
+            
+            if not pending_doctors:
+                st.info("No pending doctor approvals from you.")
+            else:
+                for doc in pending_doctors:
+                    with st.container():
+                        col1, col2, col3 = st.columns([3, 2, 1])
+                        with col1:
+                            st.markdown(f"**🔴 Dr. {doc.get('name', 'Unknown')}**")
+                            st.caption(f"📍 {doc.get('location', 'N/A')}")
+                        with col2:
+                            st.caption(f"📞 {doc.get('phone') or 'No phone'}")
+                        with col3:
+                            st.caption("⏳ Pending")
+                        st.divider()
+                        
+        except Exception as e:
+            logger.error(f"Error loading pending doctors: {str(e)}", exc_info=True)
+            st.error(f"Error loading pending doctors: {str(e)}")
+
+
 class PrimeLabsUI:
     def __init__(self):
         self.user_auth = get_user_authentication()
@@ -3140,15 +3533,29 @@ class PrimeLabsUI:
                 
                 # Page selection - include Admin only for project owners and Admin role users
                 page_options = ["Medical Records", "Expenses", "Daily Report"]
+                
+                # Get user role safely (default to empty string if None)
+                user_role = st.session_state.get('user_role') or ''
+                user_email = st.session_state.get('user_email') or ''
+                
+                # Manager page accessible to owners, Admin, and Manager role users
+                if (is_project_owner(user_email) or 
+                    user_role in [UserRole.ADMIN.value, UserRole.MANAGER.value]):
+                    page_options.append("Manager")
+                
                 # Admin page accessible only to owners and Admin role users
-                if (is_project_owner(st.session_state.user_email) or 
-                    st.session_state.user_role == UserRole.ADMIN.value):
+                if (is_project_owner(user_email) or 
+                    user_role == UserRole.ADMIN.value):
                     page_options.append("Admin")
+                
+                # Reset current_page if it's not in available options (e.g., role changed)
+                if st.session_state.current_page not in page_options:
+                    st.session_state.current_page = "Medical Records"
                 
                 selected_page = st.radio(
                     "Select Page:",
                     page_options,
-                    index=page_options.index(st.session_state.current_page) if st.session_state.current_page in page_options else 0,
+                    index=page_options.index(st.session_state.current_page),
                     key="page_selector"
                 )
                 
@@ -3169,7 +3576,9 @@ class PrimeLabsUI:
                         'expense_show_success', 'expense_last_record', 'show_recent_expenses',
                         'show_all_expenses',
                         # Admin form keys
-                        'show_admin', 'admin_user_filter'
+                        'show_admin', 'admin_user_filter',
+                        # Manager form keys
+                        'manager_doctor_name', 'manager_doctor_location', 'manager_doctor_phone', 'manager_doctor_notes'
                     ]
                     for key in form_keys_to_clear:
                         if key in st.session_state:
@@ -3207,6 +3616,18 @@ class PrimeLabsUI:
                     ExpenseForm().render(is_authorized)
                 elif current_page == "Daily Report":
                     DailyReportPage().render(is_authorized)
+                elif current_page == "Manager":
+                    # Show manager page to owners, Admin, and Manager role users
+                    user_email = st.session_state.get('user_email') or ''
+                    user_role = st.session_state.get('user_role') or ''
+                    if (is_project_owner(user_email) or 
+                        user_role in [UserRole.ADMIN.value, UserRole.MANAGER.value]):
+                        ManagerPage().render(is_authorized)
+                    else:
+                        st.error("❌ Access denied. Manager page is only accessible to users with Manager or Admin role.")
+                        # Reset to Medical Records page
+                        st.session_state.current_page = "Medical Records"
+                        st.rerun()
                 elif current_page == "Admin":
                     # Show admin page only to project owners and Admin role users
                     if (is_project_owner(st.session_state.user_email) or 
