@@ -1961,18 +1961,18 @@ class OpeningScreen:
             active_doctors = [d for d in doctors if d.get('is_active', True)]
             inactive_doctors = [d for d in doctors if not d.get('is_active', True)]
             
-            # Search and filter bar
-            filter_col1, filter_col2, filter_col3 = st.columns([3, 1, 1])
+            # Stats bar
+            st.markdown(f"""
+            <div style="display: flex; gap: 20px; padding: 10px 0; margin-bottom: 10px;">
+                <span style="color: #4CAF50;">🟢 <strong>{len(active_doctors)}</strong> Active</span>
+                <span style="color: #f44336;">🔴 <strong>{len(inactive_doctors)}</strong> Inactive</span>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Filter and search using selectbox (much more performant than rendering cards)
+            filter_col1, filter_col2 = st.columns([1, 3])
             
             with filter_col1:
-                search_query = st.text_input(
-                    "🔍 Search doctors",
-                    placeholder="Search by name or location...",
-                    key="doctor_search",
-                    label_visibility="collapsed"
-                )
-            
-            with filter_col2:
                 status_filter = st.selectbox(
                     "Status",
                     options=["Active Only", "All Doctors", "Inactive Only"],
@@ -1980,116 +1980,43 @@ class OpeningScreen:
                     label_visibility="collapsed"
                 )
             
-            with filter_col3:
-                sort_by = st.selectbox(
-                    "Sort",
-                    options=["Name A-Z", "Name Z-A", "Location"],
-                    key="doctor_sort",
+            # Apply status filter
+            if status_filter == "Active Only":
+                filtered_doctors = active_doctors
+            elif status_filter == "Inactive Only":
+                filtered_doctors = inactive_doctors
+            else:
+                filtered_doctors = doctors
+            
+            # Sort by name
+            filtered_doctors = sorted(filtered_doctors, key=lambda x: x.get('name', '').lower())
+            
+            # Build options for searchable selectbox
+            doctor_options = {
+                f"{'🟢' if d.get('is_active', True) else '🔴'} Dr. {d.get('name', 'Unknown')} - {d.get('location', '')}": d.get('id')
+                for d in filtered_doctors
+            }
+            
+            with filter_col2:
+                # Searchable dropdown - much faster than rendering buttons
+                selected_option = st.selectbox(
+                    "🔍 Search and select doctor",
+                    options=["-- Select a doctor --"] + list(doctor_options.keys()),
+                    key="doctor_selector",
                     label_visibility="collapsed"
                 )
             
-            # Apply filters
-            if status_filter == "Active Only":
-                display_doctors = active_doctors
-            elif status_filter == "Inactive Only":
-                display_doctors = inactive_doctors
-            else:
-                display_doctors = doctors
+            # Update selected doctor based on dropdown
+            if selected_option and selected_option != "-- Select a doctor --":
+                selected_doctor_id = doctor_options.get(selected_option)
+                if selected_doctor_id != st.session_state.get('selected_doctor_id'):
+                    st.session_state.selected_doctor_id = selected_doctor_id
+                    st.session_state.doctor_panel = None
             
-            # Apply search
-            if search_query:
-                search_lower = search_query.lower()
-                display_doctors = [
-                    d for d in display_doctors 
-                    if search_lower in d.get('name', '').lower() 
-                    or search_lower in d.get('location', '').lower()
-                ]
+            st.markdown("---")
             
-            # Apply sorting
-            if sort_by == "Name A-Z":
-                display_doctors = sorted(display_doctors, key=lambda x: x.get('name', '').lower())
-            elif sort_by == "Name Z-A":
-                display_doctors = sorted(display_doctors, key=lambda x: x.get('name', '').lower(), reverse=True)
-            elif sort_by == "Location":
-                display_doctors = sorted(display_doctors, key=lambda x: x.get('location', '').lower())
-            
-            # Stats bar
-            st.markdown(f"""
-            <div style="display: flex; gap: 20px; padding: 10px 0; border-bottom: 1px solid #333; margin-bottom: 15px;">
-                <span style="color: #4CAF50;">🟢 <strong>{len(active_doctors)}</strong> Active</span>
-                <span style="color: #f44336;">🔴 <strong>{len(inactive_doctors)}</strong> Inactive</span>
-                <span style="color: #888;">📋 <strong>{len(display_doctors)}</strong> Showing</span>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # Doctor cards in a scrollable container
-            if not display_doctors:
-                st.info("No doctors match your search criteria.")
-            else:
-                # Initialize selected doctor in session state
-                if 'selected_doctor_id' not in st.session_state:
-                    st.session_state.selected_doctor_id = None
-                
-                # Display doctors as clickable cards (3 per row)
-                for i in range(0, len(display_doctors), 3):
-                    cols = st.columns(3)
-                    for j, col in enumerate(cols):
-                        if i + j < len(display_doctors):
-                            doctor = display_doctors[i + j]
-                            doc_id = doctor.get('id')
-                            is_active = doctor.get('is_active', True)
-                            is_selected = st.session_state.selected_doctor_id == doc_id
-                            
-                            with col:
-                                # Card styling
-                                status_color = "#4CAF50" if is_active else "#f44336"
-                                border_color = "#1E88E5" if is_selected else "#333"
-                                bg_color = "rgba(30, 136, 229, 0.1)" if is_selected else "transparent"
-                                
-                                # Commission summary
-                                commission_rates = doctor.get('commission_rates', [])
-                                if commission_rates:
-                                    # Show just key rates
-                                    key_rates = []
-                                    for cr in commission_rates[:3]:
-                                        cat = cr.get('category', '').replace('_', ' ')
-                                        rate = cr.get('rate', 0)
-                                        ctype = cr.get('commission_type', '')
-                                        if ctype == CommissionType.PERCENTAGE.value:
-                                            key_rates.append(f"{rate:.0f}%")
-                                        else:
-                                            key_rates.append(f"₹{int(rate)}")
-                                    rates_text = " · ".join(key_rates)
-                                else:
-                                    rates_text = "No rates"
-                                
-                                st.markdown(f"""
-                                <div style="
-                                    border: 2px solid {border_color};
-                                    border-radius: 10px;
-                                    padding: 12px;
-                                    margin-bottom: 10px;
-                                    background: {bg_color};
-                                    cursor: pointer;
-                                ">
-                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                                        <span style="font-weight: 600; font-size: 14px;">Dr. {doctor.get('name', 'Unknown')[:20]}</span>
-                                        <span style="color: {status_color}; font-size: 12px;">●</span>
-                                    </div>
-                                    <div style="color: #888; font-size: 12px; margin-bottom: 4px;">📍 {doctor.get('location', 'N/A')[:25]}</div>
-                                    <div style="color: #666; font-size: 11px;">💰 {rates_text}</div>
-                                </div>
-                                """, unsafe_allow_html=True)
-                                
-                                if st.button("Select", key=f"select_doc_{doc_id}", use_container_width=True):
-                                    st.session_state.selected_doctor_id = doc_id
-                                    st.session_state.doctor_panel = None
-                                    st.rerun()
-                
-                st.markdown("---")
-                
-                # Selected doctor detail panel
-                if st.session_state.selected_doctor_id:
+            # Selected doctor detail panel
+            if st.session_state.get('selected_doctor_id'):
                     selected_doctor = next((d for d in doctors if d.get('id') == st.session_state.selected_doctor_id), None)
                     
                     if selected_doctor:
