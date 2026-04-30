@@ -847,11 +847,14 @@ class MedicalRecordForm:
                                 comm_type = default["type"].value if hasattr(default["type"], 'value') else default["type"]
                                 comm_rate = default["rate"]
                             
-                            if comm_type == CommissionType.PERCENTAGE.value:
-                                margin = paid_price - test_cost
-                                commission_amount = int(margin * comm_rate / 100) if margin > 0 else 0
+                            margin = paid_price - test_cost
+                            if margin > 0:
+                                if comm_type == CommissionType.PERCENTAGE.value:
+                                    commission_amount = int(margin * comm_rate / 100)
+                                else:
+                                    commission_amount = int(comm_rate)
                             else:
-                                commission_amount = int(comm_rate)
+                                commission_amount = 0
                             
                             total_commission += commission_amount
                             

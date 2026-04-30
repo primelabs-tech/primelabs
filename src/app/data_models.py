@@ -203,10 +203,12 @@ class TestCommissionRate(BaseModel):
     rate: float = Field(description="Rate value (% or fixed amount in rupees)")
     
     def calculate_commission(self, test_price: int, test_cost: int = 0) -> int:
-        """Calculate commission for this test. For percentage type, commission is based on margin (test_price - test_cost)."""
+        """Calculate commission for this test. Commission is only paid when margin (test_price - test_cost) is positive."""
+        margin = test_price - test_cost
+        if margin <= 0:
+            return 0
         if self.commission_type == CommissionType.PERCENTAGE:
-            margin = test_price - test_cost
-            return int(margin * self.rate / 100) if margin > 0 else 0
+            return int(margin * self.rate / 100)
         else:  # Fixed
             return int(self.rate)
 
@@ -246,9 +248,11 @@ class RegisteredDoctor(BaseModel):
         
         # Fallback to default if category not found
         default = DEFAULT_COMMISSION_RATES.get(category, {"type": CommissionType.PERCENTAGE, "rate": 0})
-        if default["type"] == CommissionType.PERCENTAGE:
-            margin = test_price - test_cost
-            commission = int(margin * default["rate"] / 100) if margin > 0 else 0
+        margin = test_price - test_cost
+        if margin <= 0:
+            commission = 0
+        elif default["type"] == CommissionType.PERCENTAGE:
+            commission = int(margin * default["rate"] / 100)
         else:
             commission = int(default["rate"])
         return (commission, default["type"], default["rate"])
