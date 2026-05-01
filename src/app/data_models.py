@@ -296,6 +296,19 @@ class DoctorReferralInfo(BaseModel):
     total_commission: int = Field(description="Total commission amount for all tests")
 
 
+class EmployeeRecord(BaseModel):
+    """Employee record in the system."""
+    name: str = Field(description="Full name of the employee")
+    phone: str = Field(description="Phone number of the employee")
+    role: str = Field(description="Role/designation (e.g. Technician, Receptionist, Cleaner, PRO)")
+    monthly_salary: int = Field(description="Monthly salary in rupees")
+    is_active: bool = Field(description="Whether the employee is currently active/approved", default=False)
+    created_at: datetime = Field(description="When the employee was added", default_factory=get_ist_now)
+    created_by_email: str = Field(description="User who added this employee")
+    approved_by: Optional[str] = Field(description="Admin who approved this employee", default=None)
+    approved_at: Optional[datetime] = Field(description="When the employee was approved", default=None)
+
+
 class DBCollectionNames(StrEnum):
     MEDICAL_RECORDS_PROD = "medical_records"
     MEDICAL_RECORDS_DEV = "medical_records_dev"
@@ -304,6 +317,7 @@ class DBCollectionNames(StrEnum):
     LEDGER_PROD = "ledger"
     LEDGER_DEV = "ledger_dev"
     REGISTERED_DOCTORS = "registered_doctors"  # Admin-managed doctor registry
+    EMPLOYEES = "employees"
 
 
 if __name__=="__main__":
