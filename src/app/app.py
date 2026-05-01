@@ -22,6 +22,7 @@ from data_models import (
     TestCommissionRate,
     TestCommissionDetail,
     DEFAULT_COMMISSION_RATES,
+    EmployeeRecord,
 )
 from user_authentication import UserAuthentication
 from utils import (
@@ -55,6 +56,16 @@ def get_active_doctors():
     all_doctors = get_all_doctors_cached()
     # Filter to only return active doctors
     return [d for d in all_doctors if d.get('is_active', True)]
+
+
+@st.cache_data(ttl=300)
+def get_all_employees_cached():
+    """Fetch all employees (cached)."""
+    db = get_firestore()
+    return db.get_docs(
+        DBCollectionNames.EMPLOYEES.value,
+        limit=1000
+    )
 
 
 def get_test_category(test_name: str, test_price: int) -> TestCategory:
@@ -1600,9 +1611,9 @@ class OpeningScreen:
             
             # Tabs for different sections - Doctor Registry only for owners, Doctor Approvals for all admins
             if is_owner:
-                tab1, tab2, tab3, tab4, tab5 = st.tabs(["👥 Manage Users", "⏳ Pending Approvals", "🚫 Rejected Users", "👨‍⚕️ Doctor Approvals", "👨‍⚕️ Doctor Registry"])
+                tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["👥 Manage Users", "⏳ Pending Approvals", "🚫 Rejected Users", "👨‍⚕️ Doctor Approvals", "👨‍⚕️ Doctor Registry", "👷 Employee Approvals"])
             else:
-                tab1, tab2, tab3, tab4 = st.tabs(["👥 Manage Users", "⏳ Pending Approvals", "🚫 Rejected Users", "👨‍⚕️ Doctor Approvals"])
+                tab1, tab2, tab3, tab4, tab5 = st.tabs(["👥 Manage Users", "⏳ Pending Approvals", "🚫 Rejected Users", "👨‍⚕️ Doctor Approvals", "👷 Employee Approvals"])
             
             with tab1:
                 st.subheader("User Role & Status Management")
@@ -1872,10 +1883,15 @@ class OpeningScreen:
             with tab4:
                 self._render_doctor_approvals()
             
-            # Doctor Registry tab (Owner only)
+            # Doctor Registry tab (Owner only) / Employee Approvals tab
             if is_owner:
                 with tab5:
                     self._render_doctor_registry()
+                with tab6:
+                    self._render_employee_approvals()
+            else:
+                with tab5:
+                    self._render_employee_approvals()
                 
         except Exception as e:
             st.error(f"Error loading user management: {str(e)}")
@@ -2513,6 +2529,121 @@ class OpeningScreen:
                                 if st.button("❌ Cancel", key="cancel_delete", use_container_width=True):
                                     st.session_state.doctor_panel = None
                                     st.rerun()
+
+    def _render_employee_approvals(self):
+        """Render the Employee Approvals interface - for Admin users to approve/reject employees"""
+        st.subheader("👷 Employee Approvals")
+        st.info("""
+        💡 **Review and approve employees** added by managers. Only approved (active) employees
+        will be considered part of the staff.
+        """)
+
+        try:
+            all_employees = get_all_employees_cached()
+
+            pending_employees = [e for e in all_employees if not e.get('is_active', False)]
+            active_employees = [e for e in all_employees if e.get('is_active', False)]
+
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("🔴 Pending Approval", len(pending_employees))
+            with col2:
+                st.metric("🟢 Active Employees", len(active_employees))
+
+            st.markdown("---")
+
+            # Pending Approvals
+            st.markdown("### ⏳ Pending Employee Approvals")
+
+            if not pending_employees:
+                st.success("✅ No pending employee approvals.")
+            else:
+                for idx, emp in enumerate(pending_employees):
+                    emp_id = emp.get('id')
+                    emp_name = emp.get('name', 'Unknown')
+                    emp_phone = emp.get('phone', 'N/A')
+                    emp_role = emp.get('role', 'N/A')
+                    emp_salary = emp.get('monthly_salary', 0)
+                    created_by = emp.get('created_by_email', 'Unknown')
+
+                    with st.container():
+                        col1, col2 = st.columns([3, 2])
+
+                        with col1:
+                            st.markdown(f"**🔴 {emp_name}**")
+                            st.caption(f"📞 {emp_phone} | 💼 {emp_role} | 💰 ₹{emp_salary:,}/month")
+
+                        with col2:
+                            st.caption(f"**Added by:** {created_by}")
+
+                        btn_col1, btn_col2, btn_col3 = st.columns([1, 1, 2])
+
+                        with btn_col1:
+                            if st.button("✅ Approve", key=f"approve_emp_{idx}_{emp_id}", type="primary", use_container_width=True):
+                                try:
+                                    self.db.update_doc(
+                                        DBCollectionNames.EMPLOYEES.value,
+                                        emp_id,
+                                        {
+                                            "is_active": True,
+                                            "approved_by": st.session_state.user_email,
+                                            "approved_at": get_ist_now_str()
+                                        }
+                                    )
+                                    get_all_employees_cached.clear()
+                                    st.success(f"✅ Approved {emp_name}")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error approving employee: {str(e)}")
+
+                        with btn_col2:
+                            if st.button("❌ Reject", key=f"reject_emp_{idx}_{emp_id}", use_container_width=True):
+                                try:
+                                    self.db.delete_doc(
+                                        DBCollectionNames.EMPLOYEES.value,
+                                        emp_id
+                                    )
+                                    get_all_employees_cached.clear()
+                                    st.warning(f"❌ Rejected and removed {emp_name}")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error rejecting employee: {str(e)}")
+
+                        st.divider()
+
+            st.markdown("---")
+
+            # Active Employees
+            st.markdown("### 🟢 Active Employees")
+
+            if not active_employees:
+                st.info("No active employees in the system.")
+            else:
+                active_employees = sorted(active_employees, key=lambda x: x.get('name', '').lower())
+
+                for emp in active_employees:
+                    col1, col2, col3, col4 = st.columns([3, 2, 2, 1])
+                    with col1:
+                        st.caption(f"🟢 **{emp.get('name', 'Unknown')}**")
+                    with col2:
+                        st.caption(f"💼 {emp.get('role', 'N/A')}")
+                    with col3:
+                        st.caption(f"💰 ₹{emp.get('monthly_salary', 0):,}/month")
+                    with col4:
+                        if st.button("🚫", key=f"deactivate_emp_{emp.get('id')}", help="Deactivate this employee"):
+                            try:
+                                self.db.update_doc(
+                                    DBCollectionNames.EMPLOYEES.value,
+                                    emp.get('id'),
+                                    {"is_active": False}
+                                )
+                                get_all_employees_cached.clear()
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Error: {str(e)}")
+
+        except Exception as e:
+            st.error(f"Error loading employee approvals: {str(e)}")
 
 
 # Cached function to compute referral report data
@@ -3341,7 +3472,7 @@ class DailyReportPage:
 
 
 class ManagerPage:
-    """Manager page for adding doctors (inactive by default) - accessible to Managers, Admins, and Owners"""
+    """Manager page for adding doctors and employees (inactive by default, pending admin approval)"""
     
     def __init__(self):
         self.db = get_firestore()
@@ -3367,17 +3498,22 @@ class ManagerPage:
         st.markdown("""
         <div style="text-align: center; padding: 20px 0;">
             <h1 style="color: #9b59b6; margin-bottom: 10px;">👔 Manager Dashboard</h1>
-            <p style="color: #666; font-size: 16px;">Add new doctors to the system</p>
+            <p style="color: #666; font-size: 16px;">Add new doctors and employees to the system</p>
         </div>
         """, unsafe_allow_html=True)
         
         st.markdown("---")
         
-        # Single tab for now - Add Doctors
-        tab1, = st.tabs(["👨‍⚕️ Add Doctors"])
+        tab1, tab2, tab3 = st.tabs(["👨‍⚕️ Add Doctors", "👷 Add Employees", "📋 Employee Registry"])
         
         with tab1:
             self._render_add_doctors_tab()
+        
+        with tab2:
+            self._render_add_employees_tab()
+        
+        with tab3:
+            self._render_employee_registry()
     
     def _render_add_doctors_tab(self):
         """Render the Add Doctors tab"""
@@ -3575,6 +3711,214 @@ class ManagerPage:
             logger.error(f"Error loading pending doctors: {str(e)}", exc_info=True)
             st.error(f"Error loading pending doctors: {str(e)}")
 
+    def _render_add_employees_tab(self):
+        """Render the Add Employees tab"""
+        st.subheader("➕ Add New Employee")
+        st.info("""
+        💡 **Note:** Employees added through this page will be **inactive** by default.
+        They will need to be approved by an Admin before they are considered active staff.
+        """)
+
+        ROLE_HINTS = ["Technician", "Receptionist", "Cleaner", "PRO"]
+
+        st.markdown("#### Employee Information")
+        col1, col2 = st.columns(2)
+
+        with col1:
+            emp_name = st.text_input(
+                "Employee Full Name *",
+                placeholder="Full name",
+                key="manager_emp_name"
+            )
+            emp_phone = st.text_input(
+                "Phone Number *",
+                placeholder="+91 98765 43210",
+                key="manager_emp_phone"
+            )
+
+        with col2:
+            emp_role = st.text_input(
+                "Role/Designation *",
+                placeholder="/".join(ROLE_HINTS),
+                help=f"Examples: {', '.join(ROLE_HINTS)}",
+                key="manager_emp_role"
+            )
+            emp_salary = st.number_input(
+                "Monthly Salary (₹) *",
+                min_value=0,
+                max_value=500000,
+                value=0,
+                step=500,
+                key="manager_emp_salary"
+            )
+
+        st.markdown("---")
+
+        can_submit = (
+            emp_name and len(emp_name.strip()) >= 2
+            and emp_phone and len(emp_phone.strip()) >= 5
+            and emp_role and len(emp_role.strip()) >= 2
+            and emp_salary > 0
+        )
+
+        if st.button("✅ Add Employee (Pending Approval)", disabled=not can_submit, key="manager_add_employee_btn", type="primary"):
+            try:
+                import uuid
+                current_user_email = st.session_state.get('user_email', '')
+                if not current_user_email:
+                    st.error("Session expired. Please log in again.")
+                    return
+
+                new_employee = EmployeeRecord(
+                    name=emp_name.strip(),
+                    phone=emp_phone.strip(),
+                    role=emp_role.strip(),
+                    monthly_salary=emp_salary,
+                    is_active=False,
+                    created_by_email=current_user_email
+                )
+
+                emp_id = str(uuid.uuid4())[:8]
+                self.db.create_doc(
+                    DBCollectionNames.EMPLOYEES.value,
+                    new_employee.model_dump(mode="json"),
+                    doc_id=emp_id
+                )
+
+                st.success(f"✅ Successfully added {emp_name.strip()} (Pending Admin Approval)")
+
+                get_all_employees_cached.clear()
+
+                for key in list(st.session_state.keys()):
+                    if key.startswith('manager_emp_'):
+                        del st.session_state[key]
+
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error adding employee: {str(e)}")
+
+        st.markdown("---")
+
+        # Show recently added employees by this user (pending approval)
+        st.markdown("### 📋 Your Recently Added Employees (Pending Approval)")
+
+        try:
+            current_user_email = st.session_state.get('user_email', '')
+            if not current_user_email:
+                st.info("No pending employee approvals.")
+                return
+
+            all_employees = get_all_employees_cached()
+
+            pending_employees = [
+                e for e in all_employees
+                if not e.get('is_active', False) and e.get('created_by_email') == current_user_email
+            ]
+
+            if not pending_employees:
+                st.info("No pending employee approvals from you.")
+            else:
+                for emp in pending_employees:
+                    with st.container():
+                        col1, col2, col3 = st.columns([3, 2, 1])
+                        with col1:
+                            st.markdown(f"**🔴 {emp.get('name', 'Unknown')}**")
+                            st.caption(f"💼 {emp.get('role', 'N/A')} | 💰 ₹{emp.get('monthly_salary', 0):,}/month")
+                        with col2:
+                            st.caption(f"📞 {emp.get('phone') or 'No phone'}")
+                        with col3:
+                            st.caption("⏳ Pending")
+                        st.divider()
+
+        except Exception as e:
+            logger.error(f"Error loading pending employees: {str(e)}", exc_info=True)
+            st.error(f"Error loading pending employees: {str(e)}")
+
+    def _render_employee_registry(self):
+        """Render the Employee Registry - view all employees and their status"""
+        st.subheader("📋 Employee Registry")
+        st.info("💡 View all employees in the system and their current status.")
+
+        try:
+            all_employees = get_all_employees_cached()
+
+            if not all_employees:
+                st.info("No employees have been added to the system yet.")
+                return
+
+            active_employees = [e for e in all_employees if e.get('is_active', False)]
+            pending_employees = [e for e in all_employees if not e.get('is_active', False)]
+
+            # Summary metrics
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Total Employees", len(all_employees))
+            with col2:
+                st.metric("🟢 Active", len(active_employees))
+            with col3:
+                st.metric("🔴 Pending Approval", len(pending_employees))
+
+            st.markdown("---")
+
+            # Active employees table
+            st.markdown("### 🟢 Active Employees")
+
+            if not active_employees:
+                st.info("No active employees yet.")
+            else:
+                active_employees = sorted(active_employees, key=lambda x: x.get('name', '').lower())
+
+                # Header row
+                header_cols = st.columns([3, 2, 2, 2])
+                with header_cols[0]:
+                    st.markdown("**Name**")
+                with header_cols[1]:
+                    st.markdown("**Role**")
+                with header_cols[2]:
+                    st.markdown("**Phone**")
+                with header_cols[3]:
+                    st.markdown("**Salary**")
+
+                for emp in active_employees:
+                    col1, col2, col3, col4 = st.columns([3, 2, 2, 2])
+                    with col1:
+                        st.text(f"🟢 {emp.get('name', 'Unknown')}")
+                    with col2:
+                        st.text(emp.get('role', 'N/A'))
+                    with col3:
+                        st.text(emp.get('phone', 'N/A'))
+                    with col4:
+                        st.text(f"₹{emp.get('monthly_salary', 0):,}")
+
+            st.markdown("---")
+
+            # Pending employees
+            st.markdown("### 🔴 Pending Approval")
+
+            if not pending_employees:
+                st.success("✅ No employees pending approval.")
+            else:
+                for emp in pending_employees:
+                    col1, col2, col3, col4 = st.columns([3, 2, 2, 2])
+                    with col1:
+                        st.text(f"⏳ {emp.get('name', 'Unknown')}")
+                    with col2:
+                        st.text(emp.get('role', 'N/A'))
+                    with col3:
+                        st.text(emp.get('phone', 'N/A'))
+                    with col4:
+                        st.text(f"₹{emp.get('monthly_salary', 0):,}")
+
+            # Refresh button
+            st.markdown("---")
+            if st.button("🔄 Refresh", key="refresh_employee_registry"):
+                get_all_employees_cached.clear()
+                st.rerun()
+
+        except Exception as e:
+            logger.error(f"Error loading employee registry: {str(e)}", exc_info=True)
+            st.error(f"Error loading employee registry: {str(e)}")
+
 
 class PrimeLabsUI:
     def __init__(self):
@@ -3666,7 +4010,8 @@ class PrimeLabsUI:
                         # Admin form keys
                         'show_admin', 'admin_user_filter',
                         # Manager form keys
-                        'manager_doctor_name', 'manager_doctor_location', 'manager_doctor_phone', 'manager_doctor_notes'
+                        'manager_doctor_name', 'manager_doctor_location', 'manager_doctor_phone', 'manager_doctor_notes',
+                        'manager_emp_name', 'manager_emp_phone', 'manager_emp_role', 'manager_emp_salary'
                     ]
                     for key in form_keys_to_clear:
                         if key in st.session_state:
