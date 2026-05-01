@@ -202,15 +202,20 @@ class TestCommissionRate(BaseModel):
     commission_type: CommissionType = Field(description="Percentage or Fixed")
     rate: float = Field(description="Rate value (% or fixed amount in rupees)")
     
-    def calculate_commission(self, test_price: int, test_cost: int = 0) -> int:
-        """Calculate commission for this test. Commission is only paid when margin (test_price - test_cost) is positive."""
+    def calculate_commission(self, test_price: int, test_cost: int = 0, discount: int = 0) -> int:
+        """
+        Calculate commission: (original_price - cost) * rate% - discount, floored at 0.
+        For fixed type: fixed_rate - discount, floored at 0.
+        No commission if margin (test_price - test_cost) <= 0.
+        """
         margin = test_price - test_cost
         if margin <= 0:
             return 0
         if self.commission_type == CommissionType.PERCENTAGE:
-            return int(margin * self.rate / 100)
+            commission = int(margin * self.rate / 100)
         else:  # Fixed
-            return int(self.rate)
+            commission = int(self.rate)
+        return max(0, commission - discount)
 
 
 class RegisteredDoctor(BaseModel):
@@ -236,15 +241,15 @@ class RegisteredDoctor(BaseModel):
     created_by_email: str = Field(description="Admin who registered this doctor")
     notes: Optional[str] = Field(description="Admin notes about this doctor", default=None)
     
-    def get_commission_for_category(self, category: TestCategory, test_price: int, test_cost: int = 0) -> tuple:
+    def get_commission_for_category(self, category: TestCategory, test_price: int, test_cost: int = 0, discount: int = 0) -> tuple:
         """
         Get commission for a specific test category.
-        For percentage type, commission is based on margin (test_price - test_cost).
+        Formula: (original_price - cost) * rate% - discount (floored at 0).
         Returns (commission_amount, commission_type, rate)
         """
         for cr in self.commission_rates:
             if cr.category == category:
-                return (cr.calculate_commission(test_price, test_cost), cr.commission_type, cr.rate)
+                return (cr.calculate_commission(test_price, test_cost, discount), cr.commission_type, cr.rate)
         
         # Fallback to default if category not found
         default = DEFAULT_COMMISSION_RATES.get(category, {"type": CommissionType.PERCENTAGE, "rate": 0})
@@ -255,6 +260,7 @@ class RegisteredDoctor(BaseModel):
             commission = int(margin * default["rate"] / 100)
         else:
             commission = int(default["rate"])
+        commission = max(0, commission - discount)
         return (commission, default["type"], default["rate"])
 
 
