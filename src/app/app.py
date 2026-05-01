@@ -543,6 +543,96 @@ class MedicalRecordForm:
                     "X-RAY THIGH AP/LAT": 450,
                     "CEA": 1500
                 }
+
+                # Fixed cost of performing each test (used for margin-based commission)
+                # Tests not listed here default to cost 0
+                TEST_COSTS = {
+                    # Pathology / Blood tests (from lab rate card)
+                    "T3T4TSH": 600,
+                    "T3T4TSH LAL PATH": 150,
+                    "VITAMIN-B12": 280,
+                    "URINE C/S": 150,
+                    "HBA1C": 150,
+                    "AFB": 150,
+                    "CSF R/M": 800,
+                    "G6PD": 380,
+                    "THROAT SWAB R/M": 150,
+                    "BIOPSY AS SIZE": 300,
+                    "D2 HORMONES T3T4PRL LH FSH": 525,
+                    "BODY BLOOD": 940,
+                    "CA-125": 500,
+                    "CA-19.9": 810,
+                    "HLA": 2300,
+                    "PUS CULTURE": 200,
+                    "PROLACTIN-PRL": 175,
+                    "TESTO-STERONE LEVEL": 200,
+                    "OESTROGEN/PROGESTRONE/TESTROGEN E": 300,
+                    "GENE-EXPERT (CBNAAT)": 2300,
+                    "VITAMIN -D3": 900,
+                    "VITAMIN-B9(FOLIC ACID)": 790,
+                    "(LAL)CSF ANTOIMMUNA WAR KUP": 24000,
+                    "ROGEN POLEN TUB MELANA SEMM N KA": 3504,
+                    "HP HELICOBACTOR PYLORI": 2050,
+                    "NT PRO BNP": 770,
+                    "IGE LEVEL": 272,
+                    "ACID PHOSPHATASE": 264,
+                    "AMYLASE LIPASE": 200,
+                    "HBAEG": 615,
+                    "Blood Culture (BDLS)": 510,
+
+                    "Iron profile": 250,
+                    "GBP": 1150,
+                    "Double marker": 800,
+                    "Anti-CGP": 285,
+                    "ANA": 250,
+                    "Gonorrhea test": 1050,
+                    "Pylori test": 2000,
+                    "TB Gold": 2508,
+                    "Androgen, plain tube modern": 2000,
+
+                    "HCV RNA": 1480,
+                    "Hep-B DNA": 1480,
+                    "Serum IPTH": 505,
+                    "TTG": 510,
+                    "Stool Occult Blood Test (SOBT)": 228,
+                    "FSH, LH": 550,
+                    "Serum TPO": 418,
+                    "Alpha Fetoprotein (α-FP)": 430,
+                    "Serum Iron": 250,
+                    "Serum Ferritin": 250,
+                    "CEA": 650,
+
+                    # CT-SCAN costs (from handwritten sheet)
+                    "CT-SCAN CT-HEAD": 0,
+                    "CT-SCAN CECT-HEAD": 300,
+                    "CT-SCAN CT-3D SKULL": 500,
+                    "CT-SCAN NCCT-ORBIT": 0,
+                    "CT-SCAN NCCT-FACE": 0,
+                    "CT-SCAN CECT-FACE": 500,
+                    "CT-SCAN HRCT-TEMPORAL BONE (CT-Mastoid)": 0,
+                    "CT-SCAN CECT-PNS": 0,
+                    "CT-SCAN CECT-NECK": 500,
+                    "CT-SCAN CT-CERVICAL SPINE": 0,
+                    "CT-SCAN HRCT-THORAX/CHEST": 0,
+                    "CT-SCAN CECT-3D THORAX/3D CHEST": 500,
+                    "CT-SCAN CECT-THORAX/CHEST": 500,
+                    "CT-SCAN NCCT-ABDOMEN": 0,
+                    "CT-SCAN CECT-ABDOMEN": 500,
+                    "CT-SCAN NCCT-KUB": 500,
+                    "CT-SCAN CECT-KUB": 500,
+                    "CT-SCAN CECT-L.S SPINE + 3D": 500,
+                    "CT-SCAN CT-D.J SPINE": 500,
+                    "CT-SCAN NCCT-ANKLE": 500,
+                    "CT-SCAN NCCT-KNEE + 3D": 500,
+                    "CT-SCAN NCCT-BOTH HIP + 3D": 500,
+                    "CT-SCAN NCCT-ELBOW + 3D": 500,
+                    "CT-SCAN NCCT-SHOULDER + 3D": 500,
+                    "CT-SCAN PNS": 0,
+                    "CT-SCAN PNS CORONAL": 0,
+                    "CT-SCAN UROGRAPHY": 500,
+                    "CT-SCAN TRIPLE PHASE ABDOMEN": 500,
+                    "CT-SCAN 3DCT HEAD": 500,
+                }
                 
                 # Multi-select for tests
                 selected_tests = st.multiselect(
@@ -736,38 +826,36 @@ class MedicalRecordForm:
                             }
                         
                         # Calculate commission for each test
-                        # IMPORTANT: Discount given to patient is deducted from doctor's commission
+                        # Commission for percentage type is based on margin (paid_price - test_cost)
                         test_commission_details = []
                         total_commission = 0
                         
                         for test_name in selected_tests:
-                            original_price = TEST_PRICES[test_name]  # Standard price
-                            paid_price = test_payments.get(test_name, original_price)  # Actual amount paid
-                            discount = original_price - paid_price  # Discount given
+                            original_price = TEST_PRICES[test_name]
+                            paid_price = test_payments.get(test_name, original_price)
+                            discount = original_price - paid_price
+                            test_cost = TEST_COSTS.get(test_name, 0)
                             
-                            # Use original price for category determination
                             test_category = get_test_category(test_name, original_price)
                             
-                            # Get commission rate for this category
                             if test_category.value in commission_lookup:
                                 cr = commission_lookup[test_category.value]
                                 comm_type = cr['type']
                                 comm_rate = cr['rate']
                             else:
-                                # Use default rates
                                 default = DEFAULT_COMMISSION_RATES.get(test_category, {"type": CommissionType.PERCENTAGE, "rate": 0})
                                 comm_type = default["type"].value if hasattr(default["type"], 'value') else default["type"]
                                 comm_rate = default["rate"]
                             
-                            # Calculate original commission (based on standard price)
-                            if comm_type == CommissionType.PERCENTAGE.value:
-                                original_commission = int(original_price * comm_rate / 100)
+                            margin = original_price - test_cost
+                            if margin > 0:
+                                if comm_type == CommissionType.PERCENTAGE.value:
+                                    commission_amount = int(margin * comm_rate / 100)
+                                else:
+                                    commission_amount = int(comm_rate)
+                                commission_amount = max(0, commission_amount - discount)
                             else:
-                                original_commission = int(comm_rate)
-                            
-                            # Deduct discount from commission
-                            # Commission = Original Commission - Discount (but not less than 0)
-                            commission_amount = max(0, original_commission - discount)
+                                commission_amount = 0
                             
                             total_commission += commission_amount
                             
@@ -777,9 +865,9 @@ class MedicalRecordForm:
                                 original_price=original_price,
                                 paid_price=paid_price,
                                 discount=discount,
+                                test_cost=test_cost,
                                 commission_type=CommissionType(comm_type),
                                 commission_rate=float(comm_rate),
-                                original_commission=original_commission,
                                 commission_amount=commission_amount
                             ))
                         
