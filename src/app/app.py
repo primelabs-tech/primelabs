@@ -3504,13 +3504,16 @@ class ManagerPage:
         
         st.markdown("---")
         
-        tab1, tab2 = st.tabs(["👨‍⚕️ Add Doctors", "👷 Add Employees"])
+        tab1, tab2, tab3 = st.tabs(["👨‍⚕️ Add Doctors", "👷 Add Employees", "📋 Employee Registry"])
         
         with tab1:
             self._render_add_doctors_tab()
         
         with tab2:
             self._render_add_employees_tab()
+        
+        with tab3:
+            self._render_employee_registry()
     
     def _render_add_doctors_tab(self):
         """Render the Add Doctors tab"""
@@ -3830,6 +3833,91 @@ class ManagerPage:
         except Exception as e:
             logger.error(f"Error loading pending employees: {str(e)}", exc_info=True)
             st.error(f"Error loading pending employees: {str(e)}")
+
+    def _render_employee_registry(self):
+        """Render the Employee Registry - view all employees and their status"""
+        st.subheader("📋 Employee Registry")
+        st.info("💡 View all employees in the system and their current status.")
+
+        try:
+            all_employees = get_all_employees_cached()
+
+            if not all_employees:
+                st.info("No employees have been added to the system yet.")
+                return
+
+            active_employees = [e for e in all_employees if e.get('is_active', False)]
+            pending_employees = [e for e in all_employees if not e.get('is_active', False)]
+
+            # Summary metrics
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Total Employees", len(all_employees))
+            with col2:
+                st.metric("🟢 Active", len(active_employees))
+            with col3:
+                st.metric("🔴 Pending Approval", len(pending_employees))
+
+            st.markdown("---")
+
+            # Active employees table
+            st.markdown("### 🟢 Active Employees")
+
+            if not active_employees:
+                st.info("No active employees yet.")
+            else:
+                active_employees = sorted(active_employees, key=lambda x: x.get('name', '').lower())
+
+                # Header row
+                header_cols = st.columns([3, 2, 2, 2])
+                with header_cols[0]:
+                    st.markdown("**Name**")
+                with header_cols[1]:
+                    st.markdown("**Role**")
+                with header_cols[2]:
+                    st.markdown("**Phone**")
+                with header_cols[3]:
+                    st.markdown("**Salary**")
+
+                for emp in active_employees:
+                    col1, col2, col3, col4 = st.columns([3, 2, 2, 2])
+                    with col1:
+                        st.text(f"🟢 {emp.get('name', 'Unknown')}")
+                    with col2:
+                        st.text(emp.get('role', 'N/A'))
+                    with col3:
+                        st.text(emp.get('phone', 'N/A'))
+                    with col4:
+                        st.text(f"₹{emp.get('monthly_salary', 0):,}")
+
+            st.markdown("---")
+
+            # Pending employees
+            st.markdown("### 🔴 Pending Approval")
+
+            if not pending_employees:
+                st.success("✅ No employees pending approval.")
+            else:
+                for emp in pending_employees:
+                    col1, col2, col3, col4 = st.columns([3, 2, 2, 2])
+                    with col1:
+                        st.text(f"⏳ {emp.get('name', 'Unknown')}")
+                    with col2:
+                        st.text(emp.get('role', 'N/A'))
+                    with col3:
+                        st.text(emp.get('phone', 'N/A'))
+                    with col4:
+                        st.text(f"₹{emp.get('monthly_salary', 0):,}")
+
+            # Refresh button
+            st.markdown("---")
+            if st.button("🔄 Refresh", key="refresh_employee_registry"):
+                get_all_employees_cached.clear()
+                st.rerun()
+
+        except Exception as e:
+            logger.error(f"Error loading employee registry: {str(e)}", exc_info=True)
+            st.error(f"Error loading employee registry: {str(e)}")
 
 
 class PrimeLabsUI:
